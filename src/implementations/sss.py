@@ -43,8 +43,8 @@ class SSS(Flow):
 
 if __name__ == "__main__":
     sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
-    sss.evolve_n(15)
-    sss.print()
-    from core.graph import CausalGraph
-    g = CausalGraph(sss)
-    g.save_to_gephi_file('./graph.gexf')
+    sss.evolve_n(20)
+    print(sss)
+    # from core.graph import CausalGraph
+    # g = CausalGraph(sss)
+    # g.save_to_gephi_file('./graph.gexf')

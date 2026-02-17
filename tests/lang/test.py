@@ -35,7 +35,7 @@ if __name__ == "__main__":
     print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")
     print(f"Total time spent: {time:.2f} seconds")
     #
-    flow.print()
+    print(flow)
     # pprint([r for r in flow.rule_set.rules])  # print the rule objects
     # from core.graph import CausalGraph
     # g = CausalGraph(flow)

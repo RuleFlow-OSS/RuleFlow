@@ -17,23 +17,24 @@ Screen {
    Input Modal
    ========================================= */
 
-/* 1. The Screen Layer (The Dimmer) */
-InputModal {
+/* The Screen Layer (The Dimmer) */
+ModalDialog {
     align: center middle;
     background: rgba(0, 0, 0, 0.7);
 }
 
-/* 2. The Dialog Box */
+/* The Dialog Box */
 #modal-dialog {
-    width: 60;
+    width: 65;
     height: auto;
+    max-height: 90vh;  /* Ensure the modal doesn't grow off-screen if there are many inputs */
     background: #252526;
     border: thick #007acc;
     padding: 1 2;
 }
 
-/* 3. Modal Components */
-#modal-label {
+/* Title and Content Container */
+#modal-title {
     width: 100%;
     content-align: center middle;
     text-style: bold;
@@ -41,27 +42,45 @@ InputModal {
     margin-bottom: 1;
 }
 
-#modal-input {
+#modal-content-container {
     width: 100%;
-    height: 3;
-    margin-bottom: 1;
-    background: #1e1e1e;
-    border: tall #444444;
+    height: auto;
 }
 
-#modal-input:focus {
-    border: tall #007acc;
-    background: #1e1e1e;
+/* Inputs and Border Titles */
+ModalDialog Input {
+    width: 100%;
+    margin: 1 0;  /* Vertical margin gives space for the border title */
+    background: #252526;
+    border: round #444444;
+    color: #e0e0e0;
 }
 
+ModalDialog Input:focus {
+    border: round #007acc;
+    background-tint: #252526;
+}
+
+/* Notes (Static text blocks) */
+.modal-note {
+    width: 100%;
+    margin: 1 0;
+    padding: 0 1;
+    color: #aaaaaa;
+    text-style: italic;
+}
+
+/* Buttons */
 #modal-buttons {
     width: 100%;
     height: 3;
     align: right middle;
+    margin-top: 1;
 }
 
 #modal-buttons Button {
-    margin-left: 2;
+    margin-left: 1;
+    min-width: 12;
 }
 
 
@@ -117,81 +136,66 @@ WelcomeScreen {
    EDITOR SCREEN (3-Column Layout)
    ========================================= */
 
-#main-layout {
-    width: 100%;
-    height: 100%;
-    layout: horizontal;
-    background: #1e1e1e;
+EditorScreen {
+        width: 100%;
+        height: 100%;
+        layout: horizontal;
+        overflow: hidden hidden;
 }
 
-/* --- 1. LEFT SIDEBAR --- */
-#sidebar {
-    width: 20%;
+/* --- LEFT SIDEBAR --- */
+#project-directory {
+    width: 1fr;
     height: 100%;
     border-right: solid #2b2b2b;
     background: #181818;
     min-width: 25;
 }
 
-/* --- 2. MIDDLE WORKSPACE --- */
+/* --- MIDDLE WORKSPACE --- */
 #workspace {
-    width: 1fr;
+    width: 2fr;
     height: 100%;
     border-right: solid #2b2b2b;
     layout: vertical;
 }
 
-/* --- 3. RIGHT MENU --- */
-#right-menu {
-    width: 25%;
-    height: 100%;
-    background: #181818;
-    scrollbar-size: 1 1;
-    min-width: 30;
+#workspace-toolbar {
+    height: auto;
+    padding: 1 2;
 }
 
+#code-editor {
+    height: 1fr;
+    margin-bottom: 1;
+}
 
+#plugin-panel {
+    height: 1fr;
+}
+
+/* --- RIGHT MENU --- */
+#plugin-controls {
+    width: 1fr;
+    height: 100%;
+    background: #181818;
+    min-width: 30;
+}
 
 
 /* =========================================
    COMPONENT STYLES
    ========================================= */
 
-/* Headers */
+.full-width {
+    width: 1fr;
+}
+
 .pane-header {
-    width: 100%;
-    height: 1;
+    width: 1fr;
     background: #252526;
-    color: #cccccc;
     text-style: bold;
     padding-left: 1;
-}
-
-/* Sidebar Specifics */
-.sidebar-note {
-    height: auto;
-    border-top: solid #2b2b2b;
-    padding: 1;
-    background: #181818;
-    dock: bottom;
-}
-
-.dim-text {
-    color: #666666;
-}
-
-/* Workspace Toolbar */
-#workspace-toolbar {
-    height: 3;
-    background: #252526;
-    padding: 0 1;
-    align: left middle;
-}
-
-#toolbar-actions {
-    width: 1fr;
-    align: right middle;
-    height: 100%;
 }
 
 .separator {
@@ -199,90 +203,21 @@ WelcomeScreen {
     color: #555555;
 }
 
-#btn-docs {
-    background: #333333;
-    border: none;
-    min-width: 8;
-}
-
 .action-btn {
     min-width: 8;
-    border: none;
-    margin-left: 1;
-}
-.success { color: #87d787; }
-.warning { color: #d7af87; }
-.error   { color: #d78787; }
-
-/* Workspace Editor & Output */
-/* UPDATED: Uses 1fr so it fills space when bottom panel toggles */
-#editor-area {
-    height: 1fr;
-    background: #1e1e1e;
-    border-bottom: solid #2b2b2b;
 }
 
-#code-editor {
-    border: none;
-    height: 100%;
+Select {
+    width: 8;
 }
 
-/* UPDATED: Fixed height helps the toggle logic work better */
-#bottom-panel {
-    height: 40%;
-    background: #1e1e1e;
-}
-
-TabbedContent {
-    height: 100%;
-}
-
-ContentSwitcher {
-    background: #1e1e1e;
-}
-
-RichLog {
-    background: #1e1e1e;
-    border: none;
-    padding: 1;
-}
-
-/* Right Menu Components */
-Collapsible {
-    background: #181818;
-    margin-bottom: 1;
-    padding: 0 1;
-}
-
-CollapsibleTitle {
+.increment-btn {
+    min-width: 1;
     background: #252526;
-    color: #cccccc;
 }
 
-Input {
-    background: #2b2b2b;
-    border: none;
-    height: 1;
-    margin-bottom: 1;
-    padding: 0 1;
-}
-
-Checkbox {
-    padding: 0;
-    background: #181818;
-    border: none;
-}
-
-.full-width-btn {
-    width: 100%;
-    margin-top: 1;
-    background: #333333;
-    border: none;
-}
-
-.placeholder-text {
-    width: 100%;
-    text-align: center;
-    padding-top: 2;
-    color: #666666;
-}
+/* ---- Colors ---- */
+.gray {color: gray;}
+.green { color: #87d787; }
+.orange { color: #d7af87; }
+.red   { color: #d78787; }

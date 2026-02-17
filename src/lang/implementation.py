@@ -34,6 +34,15 @@ class Target(NamedTuple):
 
 
 class BaseRule(RuleABC):
+    # ======== Signals ========
+    # NOTE: time.sleep() can be used by the client to pause flow execution temporally (or play notes, etc.).
+    on_applied: Signal = Signal()  # if the apply() function was called. The modified spaces is passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
+
+    # the three following rules get the RuleMatch along with idx of the current match passed as arguments to the client.
+    on_execution: Signal = Signal()
+    on_branch: Signal = Signal()
+    on_conflict: Signal = Signal()
+
     FLAG_ALIAS: dict[str, str] = {
         # IMPORTANT!!!: these must be kept up-to-date with the actual attributes.
         # ==== basic flags ====
@@ -97,14 +106,6 @@ class BaseRule(RuleABC):
 
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
 
-
-        # ======== Signals ========
-        # NOTE: time.sleep() can be used by the client to pause flow execution temporally (or play notes, etc.).
-        self.on_applied: Signal = Signal()  # if the apply() function was called. The modified spaces is passed as Sequence[DeltaSpace] so that the client can test if the rule was effective.
-        # the three following rules get the RuleMatch along with idx of the current match passed as arguments to the client.
-        self.on_execution: Signal = Signal()
-        self.on_branch: Signal = Signal()
-        self.on_conflict: Signal = Signal()
 
     def __repr__(self):
         return f"{self.__class__.__name__}({[s.selector for s in self.selectors]}, {[t.target for t in self.target]})"
@@ -216,7 +217,7 @@ class BaseRule(RuleABC):
 
                 # handle the selector if it is a conflict
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:
-                    self.on_conflict.emit(rule_match, idx)
+                    self.on_conflict.emit(self, rule_match, idx)
                     if self.crp in ('branch', 'branch_nbl'):
                         if self.crp == 'branch' and bl > self.branch_limit:
                             continue
@@ -250,13 +251,13 @@ class BaseRule(RuleABC):
                     )
                     pl = 0
                     cell_deltas.clear()
-                    self.on_execution.emit(rule_match, idx)
+                    self.on_execution.emit(self, rule_match, idx)
 
                     # set the new current space (branch into another universe)
                     if bl != self.branch_limit:
                         current_space = copy(prev_space) if self.branch_origin == 'prev' else copy(current_space)  # note: be careful when using branch_origin=current because of overwriting a conflict pair... just use with caution.
                         bl += 1
-                        self.on_branch.emit(rule_match, idx)
+                        self.on_branch.emit(self, rule_match, idx)
                     else:
                         break  # break out of loop if no branches are supposed to be made.
             modified_spaces.append(
@@ -272,7 +273,7 @@ class BaseRule(RuleABC):
         self.lifespan -= 1  # will not affect infinity if so set
         if self.lifespan == 0 and modified_spaces:
             self.disabled = True
-        self.on_applied.emit(modified_spaces)
+        self.on_applied.emit(self, modified_spaces)
         return modified_spaces
 
 

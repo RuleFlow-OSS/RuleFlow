@@ -126,21 +126,24 @@ def interpret_directives(objects: dict[str, Any], directives: list[tuple[str, An
 class FlowLangBase(Flow):
     """The general API of the Flow object used in all language implementations."""
 
-    def interpret(self, s: str, *args, **kwargs) -> None:
+    def interpret(self, s: str) -> None:
         """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
         raise NotImplementedError()
 
-    def interpret_file(self, path: str, *args, **kwargs) -> None:
+    def interpret_file(self, path: str) -> None:
         """opens `.flow` files and constructs a FlowLang object."""
         with open(path, 'r') as f:
-            return self.interpret(f.read(), *args, **kwargs)
+            return self.interpret(f.read())
 
 
 class FlowLang(FlowLangBase):
     """The main interpreter object, it is what actually runs any given code."""
 
-    def __init__(self, flow_str: str) -> None:
-        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(flow_str)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
+    def __init__(self) -> None:
+        super().__init__()
+
+    def interpret(self, s: str) -> None:
+        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(s)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
         r: dict[str, Any] = interpret_directives(
             {
                 'init': lambda *args: map(eval, map(str, args)),  # used to set the initial universe conditions.
@@ -158,8 +161,6 @@ class FlowLang(FlowLangBase):
             },
             self.ast['directives']
         )
-        Vec: type[vec.Vec] = getattr(vec, r.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
-        super().__init__()
         self.set_ruleset(RuleSet(
             list(
                 interpret_instructions(
@@ -168,11 +169,11 @@ class FlowLang(FlowLangBase):
                 )
             )
         ))
+        Vec: type[vec.Vec] = getattr(vec, r.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
         self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in r['init']])
 
         # after instantiation
         interpret_directives({
-            'print': self.print,
             'evolve': self.evolve_n,
             'merge': self.__merge_group,
             'compress': self.__compress_group

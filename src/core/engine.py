@@ -388,7 +388,7 @@ class Event:
                         yield space
 
     def __str__(self):
-        return '[' + ', '.join((str(space) for space in self.spaces)) + ']'  # TODO remove this to a dedication printer
+        return '[' + ', '.join(str(space) for space in self.spaces) + ']'  # TODO remove this to a dedication printer
 
 
 # We use these noinspections because of stupid PyCharm bug regarding slots and dataclasses that has not been fixed...
@@ -397,8 +397,8 @@ class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     # Signals (can be used to live update analysis objects like the causal graph)
-    on_evolve: Signal
-    on_undo: Signal
+    on_evolve: Signal = Signal()
+    on_undo: Signal = Signal()
 
     def __init__(self):
         self.rule_set: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
@@ -479,6 +479,9 @@ class Flow:
         min_prev: int = min((self.events[e_idx].causal_distance_to_creation for e_idx in self.current_event.causally_connected_events), default=-1)
         self.current_event.causal_distance_to_creation = min_prev + 1
 
+        # emit any signals
+        self.on_evolve.emit(self)
+
     def evolve_n(self, n_steps: int, break_when_inert: bool = False) -> None:
         """Evolve the system n steps."""
         while n_steps > 0:
@@ -502,47 +505,15 @@ class Flow:
                             cell.created_at = current_event_idx + 1
         self.events.pop(self.current_event_idx)
 
+        # emit any signals
+        self.on_undo.emit(self)
+
     def undo_n(self, n_steps: int) -> None:
         for _ in range(n_steps):
             self.undo()
 
     def __str__(self) -> str:
-        return self.print(print_to_terminal=False)
-
-    def print(self,  # TODO: this should not be here... goes in printer or explorer module.
-              show_time_steps: bool = True,
-              show_causally_connected_events: bool = False,
-              show_causal_distance_to_creation: bool = False,
-              collapse_causally_connected_events_into_set: bool = False,
-              space_idx: int = -1,
-              exclude: tuple[str, ...] = None,
-              print_to_terminal: bool = True) -> str | None:
-        """Handles printing flows to the terminal or returning in a string. Could be modified to support more modes in the future."""
-        def _str_gen(e: Event) -> Iterator[str]:
-            if show_time_steps: yield str(e.time)
-            if show_causal_distance_to_creation: yield str(e.causal_distance_to_creation)
-            if space_idx == -1:
-                yield str(e)
-            else:
-                s = e.spaces
-                if space_idx > 0:
-                    for _ in range(space_idx): next(s, None)
-                yield str(next(s, None))
-            if show_causally_connected_events:
-                yield str(set(e.causally_connected_events) if collapse_causally_connected_events_into_set
-                          else tuple(e.causally_connected_events))
-        lines: list[str] = []
-        if exclude:
-            for event in self.events:
-                l: str = '\t'.join(_str_gen(event))
-                if all((e not in l for e in exclude)): lines.append(l)
-        else:
-            for event in self.events:
-                lines.append('\t'.join(_str_gen(event)))
-        string: str = '\n'.join(lines).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m').replace('C', '\x1b[1;43m C \x1b[0m')  # TODO: make sure to generalize this by adding the parameter to control it... this is just for testing
-        if print_to_terminal:
-            print(string)
-        return string
+        return '\n'.join(str(e) for e in self.events)
 
 
 if __name__ == '__main__':
