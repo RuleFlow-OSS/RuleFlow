@@ -40,7 +40,8 @@ class Model:
     on_save: Signal = Signal()
 
     def __init__(self) -> None:
-        self.root_path: Optional[Path] = None
+        self.project_name: str = "" # name the user has given the project
+        self.project_path: Optional[Path] = None
 
         # Flow Classes (selected when creating a new Flow instance)
         self.flow_classes: dict[str, type[FlowL]] = {
@@ -53,7 +54,7 @@ class Model:
 
     def set_root_path(self, path: str | Path) -> None:
         """Sets the working directory."""
-        self.root_path = Path(path)
+        self.project_path = Path(path)
 
     def get_flow_options(self) -> list[str]:
         """

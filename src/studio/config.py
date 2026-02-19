@@ -32,6 +32,9 @@ class __RecentProjects:
         except Exception:
             pass
 
+    def get_path(self, name: str) -> str:
+        return self.data[name]
+
     def list(self) -> dict[str, str]:
         return self.data.copy()
 

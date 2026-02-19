@@ -9,8 +9,9 @@ from textual.widgets import (
     Footer, ContentSwitcher, Static
 )
 from textual.widgets.option_list import Option
-from textual import on
+from textual import on, events
 from studio import config
+from studio import model
 
 
 LOGO: str = r"""______      _     ______ _                    _____ _             _ _       
@@ -64,6 +65,9 @@ class ModalDialog(ModalScreen[dict]):
                         # Set the prompt as the border title
                         ipt.border_title = cfg.get("prompt", "")
                         yield ipt
+
+                    # TODO: Add SelectionList support
+                    pass
 
             with Horizontal(id="modal-buttons"):
                 for index, btn_text in enumerate(self.buttons_config):
@@ -162,18 +166,25 @@ class WelcomeScreen(Screen):
 
     @on(Button.Pressed, "#btn-open-project")
     def on_open(self):
-        self.app.push_screen("editor")
+        _: OptionList = cast(OptionList, self.query_one("#recents-list"))
+        if i:=_.highlighted_option:
+            self.app.MODEL.project_name = i.id  # id is the name the user has given for the project.
+            self.app.MODEL.project_path = config.RecentProjects.get_path(i.id)
+            self.app.push_screen("editor")
+        else:
+            self.notify('Please select a project to open!', severity='warning')
 
     @on(Button.Pressed, "#btn-remove-recent")
     def on_remove(self):
         _: OptionList = cast(OptionList, self.query_one("#recents-list"))
-        if (i:=_.highlighted_option) is not None:
+        if i:=_.highlighted_option:
             _.remove_option(i.id)
             config.RecentProjects.remove(i.id)
         else:
             self.notify('There is no selection to remove!', severity='warning')
 
-
+# noinspection PyTypeChecker
+# noinspection PyUnresolvedReferences
 class EditorScreen(Screen):
     """
     The main IDE interface matching Image 2 with dynamic sidebar logic.
@@ -187,13 +198,21 @@ class EditorScreen(Screen):
         ("ctrl+shift+f1", "toggle_max", "Toggle Max")
     ]
 
+    def on_screen_resume(self, event: events.ScreenResume) -> None:
+        """Whenever this screen is pushed, update the current project"""
+        label: Label = self.query_one("#project-title-label")
+        label.update(f"⭘ {self.app.MODEL.project_name}")
+        dir_tree: DirectoryTree = self.query_one("#project-dir-tree")
+        dir_tree.path = str(self.app.MODEL.project_path)
+        dir_tree.reload()
+
     def compose(self) -> ComposeResult:
         # --- LEFT COLUMN: Project Files ---
         with Vertical(id="project-directory"):
-            yield Label("⭘ Project Files", classes="pane-header")
-            yield DirectoryTree("./", id="file-tree")
-            yield Button("↻  Refresh Directory", classes='full-width gray')
-            yield Button("↩  Project Manager", classes='full-width gray')
+            yield Label("", id="project-title-label", classes="pane-header")
+            yield DirectoryTree("", id="project-dir-tree")
+            yield Button("↻  Refresh Directory", id='refresh_project_dir_btn', classes='full-width gray')
+            yield Button("↩  Project Manager", id='back_to_projects_btn', classes='full-width gray')
 
         # --- MIDDLE COLUMN: Workspace ---
         with Vertical(id="workspace"):
@@ -268,6 +287,46 @@ class EditorScreen(Screen):
         """
         pass  # TODO auto switch the plugin controls...
 
+    @on(Button.Pressed, '#back_to_projects_btn')
+    def handle_back_to_projects_btn(self):
+        def handle_modal_result(result: dict | None):
+            if not result:
+                return
+            button = result.get("button_pressed")
+            if button == "Cancel":
+                return
+            elif button == "Yes":
+                self.notify(f"Flow States Saved...")
+            else:  # button == "no"
+                self.notify(f"Exited Flow Editor...")
+            self.app.push_screen("welcome")
+
+        # Push the screen with the configuration and callback
+        self.app.push_screen(
+            ModalDialog(
+                title="Save Project State?",
+                fields=[
+                    {
+                        "type": "note",
+                        "text": "Please type the names of flows that you want to save."
+                    },
+                    {
+                        "type": "input",
+                        "prompt": "Flow Names",
+                        "placeholder": "Flow1, Flow2, ..."
+                    }
+                ],
+                buttons=["Yes", "No", "Cancel"]
+            ),
+            callback=handle_modal_result
+        )
+
+    @on(Button.Pressed, '#refresh_project_dir_btn')
+    def handle_refresh_project_dir_btn(self):
+        dir_tree: DirectoryTree = self.query_one("#project-dir-tree")
+        dir_tree.reload()
+        self.notify(f"Refreshed Project Directory...")
+
     @on(Button.Pressed, "#btn-run")
     def action_run(self):
         pass
@@ -287,11 +346,8 @@ class Main(App):
         # self.model = Model()  # this is the Model side of the MVC design
         self.install_screen(WelcomeScreen(), name="welcome")
         self.install_screen(EditorScreen(), name="editor")
+        self.MODEL = model.Model()
         self.push_screen("welcome")
-
-    def action_run_sim(self):
-        if isinstance(self.screen, EditorScreen):
-            self.screen.action_run()
 
     def action_save_file(self):
         self.notify("File saved successfully.")
