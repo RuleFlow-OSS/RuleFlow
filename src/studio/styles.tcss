@@ -21,6 +21,7 @@ Screen {
 ModalDialog {
     align: center middle;
     background: rgba(0, 0, 0, 0.7);
+    overflow-x: auto;
 }
 
 /* The Dialog Box */

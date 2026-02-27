@@ -1,4 +1,10 @@
-"""View/Controller side of the MVC paradigm"""
+"""View/Controller side of the MVC paradigm
+
+Policies:
+- For software design reasons, it is best to make the user-flow from welcome screen to editor irreversible for the
+current process so that we don't have to introspectively modify state if the user selects a different project.
+This decision was made due to the ease of plugin implementation and project saving.
+"""
 from pathlib import Path
 from typing import cast, Iterable
 from textual.app import App, ComposeResult
@@ -10,7 +16,7 @@ from textual.widgets import (
     Footer, ContentSwitcher, Static, Checkbox
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
-from textual import on, events
+from textual import on
 from studio import config
 from studio import model
 
@@ -33,6 +39,8 @@ class Spacer(Static):
 class DirectoryTree(_DT):
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
         for path in paths:
+            if str(path).endswith("__") or str(path).startswith("__"):
+                continue
             if path.is_dir() or any(map(path.match, config.SUPPORTED_FILE_TYPES)):
                 yield path
 
@@ -182,8 +190,10 @@ class WelcomeScreen(Screen):
     def btn_open_project(self):
         _: OptionList = cast(OptionList, self.query_one("#recents-list"))
         if i:=_.highlighted_option:
-            self.app.MODEL.project_name = i.id  # id is the name the user has given for the project.
-            self.app.MODEL.project_path = config.RecentProjects.get_path(i.id)
+            self.app.MODEL = model.Model(  # create an instance of model side of the MVC design
+                i.id,  # we use id as the field to store the name of the project
+                config.RecentProjects.get_path(i.id)
+            )
             self.app.push_screen("editor")
         else:
             self.notify('Please select a project to open!', severity='warning')
@@ -196,6 +206,7 @@ class WelcomeScreen(Screen):
             config.RecentProjects.remove(i.id)
         else:
             self.notify('There is no selection to remove!', severity='warning')
+
 
 # noinspection PyTypeChecker
 # noinspection PyUnresolvedReferences
@@ -213,7 +224,8 @@ class EditorScreen(Screen):
         ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
     ]
 
-    def __update_flow_selector(self):
+    def __refresh_flow_selector__(self) -> None:
+        """Call to refresh the flow selector"""
         # load flows
         m: model.Model = self.app.MODEL
         ol: Select = self.query_one("#select-flow")
@@ -223,27 +235,19 @@ class EditorScreen(Screen):
             ol._init_selected_option(m.flows.index(m.active_flow))  # select the first option
         except: pass
 
-    def on_screen_resume(self) -> None:
-        """Whenever this screen is pushed, update the current project"""
-        # load project label
-        label: Label = self.query_one("#project-title-label")
-        label.update(f"⭘ {self.app.MODEL.project_name}")
+    def __refresh_plugin_components__(self) -> None:
+        pass
 
-        # set project path
-        dir_tree: DirectoryTree = self.query_one("#project-dir-tree")
-        dir_tree.path = str(self.app.MODEL.project_path)
-        dir_tree.reload()
-
-        # load flows
-        self.__update_flow_selector()
+    def on_mount(self) -> None:
+        self.__refresh_flow_selector__()
+        self.__refresh_plugin_components__()
 
     def compose(self) -> ComposeResult:
         # --- LEFT COLUMN: Project Files ---
         with Vertical(id="project-directory"):
-            yield Label("", id="project-title-label", classes="pane-header")
-            yield DirectoryTree("", id="project-dir-tree")
-            yield Button("↻  Refresh Directory", id='btn_refresh_project_dir', classes='full-width gray')
-            yield Button("↩  Exit to Project Manager", id='btn_back_to_projects', classes='full-width gray')
+            yield Label(f"⭘ {self.app.MODEL.project_name}", id="project-title-label", classes="pane-header")
+            yield DirectoryTree(self.app.MODEL.project_path, id="project-dir-tree")
+            yield Button('↻  Refresh Directory', id='btn_refresh_project_dir', classes='full-width gray')
 
         # --- MIDDLE COLUMN: Workspace ---
         with Vertical(id="workspace"):
@@ -272,16 +276,14 @@ class EditorScreen(Screen):
 
             # Plugin Panel
             with TabbedContent(id="plugin-panel"):
-                # TODO: loop through the plugin TabPanes and yield them here
+                # loop through the plugin TabPanes and yield them here
                 pass
-                # with TabPane("test"):
-                #     yield Label("Graph/Network Visualization Placeholder")
 
         # --- RIGHT COLUMN: Plugin Control Menu ---
         with Vertical(id="plugin-controls"):
             yield Label("⭘ Run Settings", classes="pane-header", id="plugin-controls-header")
             with ContentSwitcher(id="sidebar-switcher"):
-                # TODO: loop through the collapsable's that the plugin provides, and place in Vertical containers.
+                # loop through the collapsable's that the plugin provides, and place in Vertical containers.
                 pass
 
         # --- Footer ---
@@ -324,7 +326,7 @@ class EditorScreen(Screen):
             if not self.app.MODEL.create_new_flow(result["input"]["flow_name"], result["checkbox"]["branch_checkbox"]):
                 self.notify(f"A flow with name \"{result["input"]["flow_name"]}\" already exists.", severity="error")
                 return
-            self.__update_flow_selector()
+            self.__refresh_flow_selector__()
             self.notify(f"Created the \"{self.app.MODEL.active_flow.name}\" flow session...")
 
         # Push the screen with the configuration and callback
@@ -362,7 +364,7 @@ class EditorScreen(Screen):
             if result.get("pressed_button") == "Yes":
                 self.notify(f"Deleted the \"{self.app.MODEL.active_flow.name}\" flow session...")
                 self.app.MODEL.delete_selected_flow()
-                self.__update_flow_selector()
+                self.__refresh_flow_selector__()
         self.app.push_screen(
             ModalDialog(
                 title="Delete Flow?",
@@ -399,34 +401,7 @@ class EditorScreen(Screen):
         """Dynamically switches the Right Sidebar content AND Title."""
         pass
 
-    # ==== Panel and Controls ====
-    @on(Button.Pressed, '#btn_back_to_projects')
-    def btn_back_to_projects(self):
-        def handle_modal_result(result: dict):
-            button = result["pressed_button"]
-            if button == "Cancel":
-                return
-            elif button == "Yes":
-                self.notify(f"Saving Plugin Settings...")
-            else:
-                self.notify(f"Exited Editor...")
-            self.app.push_screen("welcome")
-
-        # Push the screen with the configuration and callback
-        self.app.push_screen(
-            ModalDialog(
-                title="Save Plugin Configuration?",
-                fields=[
-                    {
-                        "type": "note",
-                        "text": "Saving the plugin configuration directs all plugins to save their settings (if supported)."
-                    }
-                ],
-                buttons=["Yes", "No", "Cancel"]
-            ),
-            callback=handle_modal_result
-        )
-
+    # ==== File Manager ====
     @on(Button.Pressed, '#btn_refresh_project_dir')
     def btn_refresh_project_dir(self):
         dir_tree: DirectoryTree = self.query_one("#project-dir-tree")
@@ -436,17 +411,40 @@ class EditorScreen(Screen):
 
 class Main(App):
     CSS_PATH = "styles.tcss"
-    BINDINGS = [
-        ("ctrl+q", "quit", "Quit"),
-    ]
 
     def on_mount(self):
-        self.MODEL = model.Model()  # this is the Model side of the MVC design
-
         # create the screens and push the welcome page
         self.install_screen(WelcomeScreen(), name="welcome")
         self.install_screen(EditorScreen(), name="editor")
         self.push_screen("welcome")
+
+    def action_quit(self):
+        if not hasattr(self, "MODEL"):
+            self.exit()
+        def handle_modal_result(result: dict):
+            if result["pressed_button"] == "Yes":
+                if result["checkbox"]["save_config"]["value"]:
+                    self.app.MODEL.plugins_save_configs()
+                self.exit()
+        # Push the screen with the configuration and callback
+        self.app.push_screen(
+            ModalDialog(
+                title="Exit RuleFlow Studio?",
+                fields=[
+                    {
+                        "type": "note",
+                        "text": "Saving the plugin configuration directs all plugins to save their settings (if supported)."
+                    },
+                    {
+                        "type": "checkbox",
+                        "label": "Save plugin configuration",
+                        "id": "save_config"
+                    }
+                ],
+                buttons=["Yes", "No", "Cancel"]
+            ),
+            callback=handle_modal_result
+        )
 
 
 if __name__ == "__main__":

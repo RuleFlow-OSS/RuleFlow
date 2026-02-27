@@ -10,8 +10,14 @@ from abc import ABC, abstractmethod
 from textual.widgets import TabPane, Collapsible
 from textual.app import App as TextualApp
 from core.signals import Signal
-from pathlib import Path
 from copy import deepcopy
+
+# used for dynamic imports and path management
+from pathlib import Path
+import importlib.util
+import inspect
+import sys
+import importlib
 
 
 class Flow:
@@ -42,15 +48,38 @@ class Model:
     on_load: Signal = Signal()
     on_save: Signal = Signal()
 
-    def __init__(self) -> None:
-        self.project_name: str = ""  # name the user has given the project
-        self.project_path: Optional[Path] = None
+    def __init__(self, name: str, project_path: Path) -> None:
+        # ======== Basic Project Config ========
+        self.project_name: str = name  # name the user has given the project
+        self.project_path: Path = project_path
 
-        # Active Flows
+        # ======== Plugins ========
+        self.plugins: list[Plugin] = []
+
+        # add builtin plugins
+        from studio.stdplgns import analysis, output, run
+        for module in (analysis, output, run):
+            for _, obj in inspect.getmembers(module):
+                if isinstance(obj, Plugin):
+                    self.plugins.append(obj)
+        # load all plugins
+        for pp in (self.project_path / "plugins").glob("*.py"):
+            module_name = f"plugins.{pp.stem}"  # make it appear as if it lives in a package called plugins.
+            # Dynamically import module
+            spec = importlib.util.spec_from_file_location(module_name, pp)  # tells Python how to load the file
+            module = importlib.util.module_from_spec(spec)  # allocates module object
+            sys.modules[module_name] = module  # makes it importable and unique
+            spec.loader.exec_module(module)  # populates module with code and objects
+            # Look for instances of Plugin inside the module
+            for _, obj in inspect.getmembers(module):
+                if isinstance(obj, Plugin):
+                    self.plugins.append(obj)
+
+        # ======== Active Flows ========
         self.flows: list[Flow] = []
         self.active_flow: Optional[Flow] = None
 
-        # add default
+        # add default flow
         self.flows.append(_:=Flow())
         _.name = "Root"
         self.active_flow = _
@@ -80,13 +109,10 @@ class Model:
         else:
             self.active_flow = None
 
-    # ==== Persistence ====
-    def save(self, to_file: str) -> None:
-        pass  # TODO implement
-
-    @classmethod
-    def load(cls, from_file: str) -> Model:
-        pass  # TODO implement
+    def plugins_save_configs(self):
+        """Direct all plugins to save configuration of the plugin."""
+        for p in self.plugins:
+            p.save_configuration()
 
 
 # ================ Client Implemented  ================
@@ -97,7 +123,9 @@ class Plugin(ABC):
     If session/flow-instance-specific behavior is desired, the session change signal must be watched and handled.
 
     Required attributes:
-    - name: the name of the plugin
+    - name: str  # the name of the plugin
+    - refreshable: bool  # if the panel and controls should be called again due to a change in widget objects
+                           (only used by the app screen to determine whether to rerender this plugin)
     """
 
     @abstractmethod
@@ -114,6 +142,7 @@ class Plugin(ABC):
         """Returns the controls (in renderable format) for modifying this plugin's behavior."""
         return None
 
+    @abstractmethod
     def save_configuration(self):
         """Optional method to implement that is called by the editor when exiting."""
         pass
