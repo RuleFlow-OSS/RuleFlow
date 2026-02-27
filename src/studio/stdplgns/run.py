@@ -5,12 +5,12 @@ from studio.model import Plugin, Model
 
 class P(Plugin):
     def __init__(self) -> None:
-        self.name: str = "Run"
+        self.name: str = "run"
         self.model: Optional[Model] = None
         self.app: Optional[App] = None
 
     def panel(self) -> TabPane | None:
-        return TabPane("Run", id='plugin_run')
+        return TabPane(self.name.title())
 
     def controls(self) -> list[Collapsible]:
         return []

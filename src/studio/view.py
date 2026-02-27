@@ -284,8 +284,9 @@ class EditorScreen(Screen):
             yield Label("", classes="pane-header", id="plugin-controls-header")
             with ContentSwitcher(id="sidebar-switcher"):
                 # loop through the collapsable's that the plugin provides, and place in Vertical containers.
-                for plugin in self.app.MODEL.plugins:
-                    with Vertical(id=plugin.name):
+                for i, plugin in enumerate(self.app.MODEL.plugins):
+                    with Vertical(id=f'tab-{i+1}'):
+                        yield Label(f"#tab-{i+1}")  # TODO temp test code
                         for c in plugin.controls():
                             yield c
 
@@ -403,8 +404,9 @@ class EditorScreen(Screen):
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated):
         """Dynamically switches the Right Sidebar content AND Title."""
         # TODO: make the ContentSwitcher properly assign the right ID...
-        # container: ContentSwitcher = self.query_one('#sidebar-switcher')
-        # container.current = event.pane.id
+        container: ContentSwitcher = self.query_one('#sidebar-switcher')
+        container.current = event.pane.id
+        # noinspection PyProtectedMember
         self.query_one('#plugin-controls-header').content = f"⭘ {event.pane._title}"
 
     # ==== File Manager ====
