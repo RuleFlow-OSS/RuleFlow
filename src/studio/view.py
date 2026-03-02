@@ -2,6 +2,7 @@
 
 LongTermTODO:
 - Make each flow session have its own text editor.
+- Add edit buttons create, rename, and delete files.
 
 Policies:
 - For software design reasons, it is best to make the user-flow from welcome screen to editor irreversible for the
@@ -249,7 +250,6 @@ class EditorScreen(Screen):
             yield Label(f"⭘ {self.app.MODEL.project_name}", id="project-title-label", classes="pane-header")
             yield DirectoryTree(self.app.MODEL.project_path, id="project-dir-tree")
             yield Button('↻  Refresh Directory', id='btn_refresh_project_dir', classes='full-width gray')
-            # TODO: add file buttons (creation, rename, etc.)
 
         # --- MIDDLE COLUMN: Workspace ---
         with Vertical(id="workspace"):
@@ -441,6 +441,7 @@ class EditorScreen(Screen):
             self.notify("That file no longer exists!", severity="error")
             self.query_one(DirectoryTree).reload()
             return
+        self.action_save_file()
         m.active_flow.open_file(event.path)
         self.set_code_editor_text(m.active_flow.read_file())
 
@@ -449,8 +450,7 @@ class EditorScreen(Screen):
         f: model.Flow = m.active_flow
         if f is None:
             return
-        if f.file_path:
-            f.write_file(self.get_code_editor_text())
+        if f.write_file(self.get_code_editor_text()):
             self.notify(f"Saved the \"{f.file_path.name}\" file.")
 
     @on(Button.Pressed, '#btn_refresh_project_dir')

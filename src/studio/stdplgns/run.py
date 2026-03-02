@@ -1,4 +1,5 @@
 from textual.widgets import Collapsible, TabPane
+from textual.widget import Widget
 from textual.containers import ScrollableContainer
 from textual.app import App
 from typing import Optional
@@ -18,6 +19,6 @@ class P(Plugin):
                 Collapsible(), Collapsible())
         )
 
-    def controls(self) -> list[Collapsible]:
+    def controls(self) -> list[Widget]:
         return [Collapsible(title=self.name.title())]
 plugin = P()

@@ -1,13 +1,9 @@
-"""The model side of the MVC paradigm
-
-# TODO:
-- Clean up the way the Model part of the MVC is designed.
-- Connect it up to the View/Controller.
-"""
-from typing import Optional, Any
+"""The model side of the MVC paradigm"""
+from typing import Optional
 from lang import FlowLangBase, FlowLang  # in the implementation
 from abc import ABC, abstractmethod
-from textual.widgets import TabPane, Collapsible
+from textual.widgets import TabPane
+from textual.widget import Widget
 from textual.app import App as TextualApp
 from core.signals import Signal
 from copy import deepcopy
@@ -22,23 +18,29 @@ import importlib
 
 class Flow:
     """
-    Represents
+    Represents a flow instance session (includes API for interacting with .flow files on the disc).
     """
     def __init__(self) -> None:
         # Metadata
         self.name: str = ""
         self.file_path: Path | None = None
+        self._edit_hash: int = 0  # used to check if some text has already been saved...
 
         # Flow State
         self.flow: FlowLangBase = FlowLang()
 
-    def write_file(self, text: str) -> None:
-        if self.file_path:
+    def write_file(self, text: str) -> bool:
+        """Writes to the file and returns True if the file was written to."""
+        if self.file_path and self._edit_hash != (eh:=hash(text)):
             self.file_path.write_text(text)
+            self._edit_hash = eh
+            return True
+        return False
 
     def read_file(self) -> str | None:
         if self.file_path:
-            return self.file_path.read_text()
+            self._edit_hash = hash(text:=self.file_path.read_text())
+            return text
         return None
 
     def open_file(self, path: Path | None):
@@ -149,7 +151,7 @@ class Plugin(ABC):
         return None
 
     @abstractmethod
-    def controls(self) -> list[Collapsible]:
+    def controls(self) -> list[Widget]:
         """Returns the controls (in renderable format) for modifying this plugin's behavior."""
         return []
 
