@@ -16,7 +16,7 @@ class P(Plugin):
         self.app: Optional[App] = None
 
     def panel(self) -> TabPane | None:
-        # TODO: connect up the controls and the Flow backend...
+        # TODO: connect up the controls and the Flow backend......
         return TabPane(
             self.name.title(),
             ScrollableContainer(
