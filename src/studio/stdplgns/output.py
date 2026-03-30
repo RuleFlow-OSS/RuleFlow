@@ -1,5 +1,6 @@
 # Textual Imports
 from textual.widgets import Collapsible, TabPane, Input, Checkbox, Label, DataTable
+from rich.text import Text
 from textual.widgets.data_table import CellKey
 from textual.widget import Widget
 from textual.coordinate import Coordinate
@@ -14,15 +15,22 @@ class P(Plugin):
     def on_initialized(self) -> None:
         self.name = 'output'
 
-        # connect signals
+        # plugin attributes
+        # TODO: work on this
+        self._color_map: dict[str, Text] = {
+            l: Text(l) for l in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        }
+
+        # connect model signals
         self.model.active_flow.flow.on_evolve.connect(self.on_evolved)
         self.model.active_flow.flow.on_undo.connect(self.on_undo)
+        self.model.active_flow.flow.on_clear.connect(self.on_clear)
+
+        # connect view signals
+        self.view.sig_checkbox_changed.connect(self.handle_checkbox)
 
     def controls(self) -> Iterator[Widget]:
-        self.render_range = Input()
-        self.render_range.border_title = 'Render Range'
-        yield self.render_range
-        self.live_step = Checkbox('Live Step')
+        self.live_step = Checkbox('Live Step')  # update on each step, rather than the end of an evolution.
         yield self.live_step
 
         with Collapsible(title='Pattern Queries', collapsed=False):
@@ -50,16 +58,20 @@ class P(Plugin):
             self.show_causally_connected = Checkbox('Show Causally connected')
             yield self.show_causally_connected
 
-        with Collapsible(title='Branch Paths', collapsed=True):
-            self.branch_render_range = Input()
-            self.branch_render_range.border_title = 'Branch Range(s)'
-            yield self.branch_render_range
-            self.interactive_selection_mode = Checkbox('Interactive Mode')
-            yield self.interactive_selection_mode
+        with Collapsible(title='Color Controls', collapsed=True):
+            self.color_mapping = Input()
+            self.color_mapping.border_title = 'Color Mapping'
+            yield self.color_mapping
+
+    def handle_checkbox(self, sig: Checkbox.Changed) -> None:
+        pass
 
     def panel(self) -> TabPane | None:
         self.data_table = DataTable(id='data-table')
-        self.data_table.add_columns('Steps')
+        self.data_table.add_columns('Time')
+        self.data_table.add_columns('Distance')
+        self.data_table.add_columns('Causally Connected')
+        self.data_table.add_columns('Evolution')
 
         return TabPane(
             self.name.title(),
@@ -67,12 +79,26 @@ class P(Plugin):
         )
 
     def on_evolved(self):
-        self.data_table.add_row(str(self.model.active_flow.flow.current_event.spaces.__next__()))
-        self.data_table.scroll_end(x_axis=False, animate=False)
+        # noinspection PyTypeChecker
+        flow: FlowLang = self.model.active_flow.flow
+        self.data_table.add_row(
+            str(flow.current_event.time),
+            str(flow.current_event.causal_distance_to_creation),
+            str(tuple(flow.current_event.causally_connected_events)),
+            str(flow.current_event.spaces.__next__()).replace('A', '[on blue3] A [/on blue3]')
+            .replace('B', '[on magenta] B [/on magenta]')
+            .replace('C', '[on yellow] C [/on yellow]')
+        )
+        if self.data_table.is_vertical_scroll_end:
+            self.data_table.scroll_end(x_axis=False, animate=False)
 
     def on_undo(self):
         cell_key: CellKey = self.data_table.coordinate_to_cell_key(Coordinate(self.data_table.row_count - 1, 0))
         self.data_table.remove_row(cell_key.row_key)
-        self.data_table.scroll_end(x_axis=False, animate=False)
+        if self.data_table.is_vertical_scroll_end:
+            self.data_table.scroll_end(x_axis=False, animate=False)
+
+    def on_clear(self):
+        self.data_table.clear()
 
 plugin = P()

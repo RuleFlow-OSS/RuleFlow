@@ -399,6 +399,7 @@ class Flow:
     on_evolve_n: Signal = Signal()  # after all evolves
     on_undo: Signal = Signal()
     on_undo_n: Signal = Signal()  # after all undo's
+    on_clear: Signal = Signal()
 
     def __init__(self):
         self.rule_set: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
@@ -420,6 +421,7 @@ class Flow:
     def clear_evolution(self) -> None:
         """Clear the evolution."""
         del self.events[1:]
+        self.on_clear.emit(self)
 
     @property
     def current_event(self) -> Event:

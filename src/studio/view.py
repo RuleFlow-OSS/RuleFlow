@@ -297,12 +297,24 @@ class EditorScreen(Screen):
 
         # ==== Signals ====
         self.sig_button_pressed: Signal[Button.Pressed] = Signal()
+        self.sig_checkbox_changed: Signal[Checkbox.Changed] = Signal()
+        self.sig_input_changed: Signal[Input.Changed] = Signal()
         self.sig_save_config_directive: Signal = Signal()
 
     @on(Button.Pressed)
     def _emit_button_signals(self, event: Button.Pressed) -> None:
         """Handle emitting the button pressed signal"""
         self.sig_button_pressed.emit(event)
+
+    @on(Checkbox.Changed)
+    def _emit_checkbox_signals(self, event: Checkbox.Changed) -> None:
+        """Handle emitting the checkbox changed signal"""
+        self.sig_checkbox_changed.emit(event)
+
+    @on(Input.Changed)
+    def _emit_input_signals(self, event: Input.Changed) -> None:
+        """Handle emitting the input changed signal"""
+        self.sig_input_changed.emit(event)
 
     def on_mount(self) -> None:
         self.__refresh_flow_selector__()

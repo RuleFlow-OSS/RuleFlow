@@ -166,12 +166,14 @@ class FlowLang(FlowLangBase):
             )
         ))
         Vec: type[vec.Vec] = getattr(vec, r.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
-        self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in r['init']])
+        if not self.events:
+            self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in r['init']])
 
         # after instantiation
         interpret_directives({
             'evolve': self.evolve,
             'undo': self.undo,
+            'clear': self.clear_evolution,
             'merge': self.__merge_group,
             'compress': self.__compress_group
         }, self.ast['directives'])
