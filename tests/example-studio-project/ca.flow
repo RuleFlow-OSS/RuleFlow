@@ -1,0 +1,8 @@
+// Rule 30
+@import(ca.fp);
+
+// define the rules
+@decode(wns, AB, 30);
+
+// Run n times
+@evolve(1);

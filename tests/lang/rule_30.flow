@@ -1,5 +1,5 @@
 // Rule 30
-@init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
+@import(ca.fp)
 
 // define the rules
 @compress(0);

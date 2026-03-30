@@ -1,0 +1,9 @@
+// set the initial state
+@init("AB");
+
+// define the sequential rules
+ABA -> AAB;
+A -> ABA;
+
+// Evolve n times (use @undo to undo n steps)
+@evolve(1);
