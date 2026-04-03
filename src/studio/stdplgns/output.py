@@ -16,10 +16,10 @@ class P(Plugin):
         self.name = 'output'
 
         # plugin attributes
-        # TODO: work on this
-        self._color_map: dict[str, Text] = {
-            l: Text(l) for l in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        }
+        # # TODO: work on this
+        # self._color_map: dict[str, Text] = {
+        #     l: Text(l) for l in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        # }
 
         # connect model signals
         self.model.active_flow.flow.on_evolve.connect(self.on_evolved)

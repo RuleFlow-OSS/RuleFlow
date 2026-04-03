@@ -479,7 +479,7 @@ class EditorScreen(Screen):
 
     @on(Select.Changed, '#select-flow')
     def select_flow(self, event: Select.Changed):
-        self.action_save_file()
+        # Do not save the file here because of race condition with overwriting the previous file opened when flow is deleted.
         m: model.Model = self.app.MODEL
         if isinstance(event.value, int):
             m.active_flow = m.flows[event.value]

@@ -5,4 +5,4 @@
 @decode(wns, AB, 30);
 
 // Run n times
-@evolve(1);
+@evolve(10);

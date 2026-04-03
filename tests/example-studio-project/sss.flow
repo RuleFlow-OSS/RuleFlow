@@ -6,4 +6,5 @@ ABA -> AAB;
 A -> ABA;
 
 // Evolve n times (use @undo to undo n steps)
-@evolve(
+@clear();
+@evolve(10);

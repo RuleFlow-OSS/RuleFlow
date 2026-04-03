@@ -134,6 +134,18 @@ class FlowLangBase(Flow):
         """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
         raise NotImplementedError()
 
+    def undo(self, n_steps: int) -> None:
+        super().undo(n_steps)
+        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if undoing anything...
+            # noinspection PyUnresolvedReferences
+            space.cells.refresh_search_buffer()
+
+    def clear_evolution(self) -> None:
+        super().clear_evolution()
+        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if clearing anything...
+            # noinspection PyUnresolvedReferences
+            space.cells.refresh_search_buffer()
+
 
 class FlowLang(FlowLangBase):
     """The main interpreter object, it is what actually runs any given code."""
@@ -178,12 +190,6 @@ class FlowLang(FlowLangBase):
             'compress': self.__compress_group
         }, self.ast['directives'])
 
-    def undo(self, n_steps: int) -> None:
-        super().undo(n_steps)
-        for space in self.current_event.spaces:  # we must remember to refresh the buffer if undoing anything...
-            # noinspection PyUnresolvedReferences
-            space.cells.refresh_search_buffer()
-
     def __merge_group(self, identifier: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
         rules: list[BaseRule] = cast(list[BaseRule], self.rule_set.rules)
@@ -199,7 +205,7 @@ class FlowLang(FlowLangBase):
                 break
 
     def __compress_group(self, identifier: int | str):
-        """Compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
+        """A directive to compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
         rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.rule_set.rules)
                                  if rule.group == identifier and not rule.disabled]
         # If any rule makes no changes, disable it.

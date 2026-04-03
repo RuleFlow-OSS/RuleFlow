@@ -1,4 +1,4 @@
-from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast
+from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast, Self
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from copy import copy
@@ -395,15 +395,18 @@ class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
     # Signals (can be used to live update analysis objects like the causal graph)
-    on_evolve: Signal = Signal()
-    on_evolve_n: Signal = Signal()  # after all evolves
-    on_undo: Signal = Signal()
-    on_undo_n: Signal = Signal()  # after all undo's
-    on_clear: Signal = Signal()
+    on_evolve: Signal[Self] = Signal()
+    on_evolve_n: Signal[Self] = Signal()  # after all evolves
+    on_undo: Signal[Self] = Signal()
+    on_undo_n: Signal[Self] = Signal()  # after all undo's
+    on_clear: Signal[Self] = Signal()
 
     def __init__(self):
         self.rule_set: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
         self.events: list[Event] = []  # defaults to empty... but nothing will work properly
+
+        # progress tracking attributes
+        self.n_step_progress: float = 1  # percentage of steps run by some_method_n().
 
     def set_ruleset(self, ruleset: RuleSet) -> None:
         """Used to set the rule set"""
@@ -472,15 +475,17 @@ class Flow:
 
     def evolve(self, n_steps: int, break_when_inert: bool = False) -> None:
         """Evolve the system n steps."""
-        while n_steps > 0:
+        i: int = 0
+        while i < n_steps:
             # print(str(next(self.current_event.spaces).cells.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
+            self.n_step_progress = (i + 1) / n_steps
+            i += 1
             self._evolve()
-            n_steps -= 1
             if break_when_inert and self.current_event.inert:
                 break
 
         # emit any signals
-        self.on_undo_n.emit(self)
+        self.on_evolve_n.emit(self)
 
     def _undo(self) -> None:
         """undo the last event..."""
@@ -498,7 +503,9 @@ class Flow:
 
     def undo(self, n_steps: int) -> None:
         for _ in range(n_steps):
+            self.n_step_progress = (_ + 1) / n_steps
             self._undo()
+
         self.on_undo_n.emit(self)
 
     def __str__(self) -> str:
