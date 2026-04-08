@@ -8,4 +8,4 @@ A -> ABA;
 // Evolve n times
 // @clear();
 // @undo(10);
-@evolve(10);
+@evolve(1)

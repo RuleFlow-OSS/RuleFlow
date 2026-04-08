@@ -11,7 +11,7 @@ Future Considerations:
 """
 from typing import Sequence, NamedTuple, Literal, cast, Iterator
 from copy import deepcopy, copy
-from lang.numerical_helpers import INF
+from core.numlib import INF
 from core.signals import Signal
 from core.engine import (
     SpaceState1D as SpaceState,

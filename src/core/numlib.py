@@ -182,6 +182,10 @@ def str_to_num(num: str) -> int | float:
         return float(num)
 
 
+def is_infinity(num: int | Inf) -> bool:
+    return isinstance(num, Inf)
+
+
 if __name__ == '__main__':
     a = [1, 2, 3]
     print(a[-INF:1])

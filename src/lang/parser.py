@@ -1,6 +1,6 @@
 from core import enumerator
 from lark import Lark, Transformer
-from lang.numerical_helpers import str_to_num, INF
+from core.numlib import str_to_num, INF
 from typing import Any, cast
 
 
