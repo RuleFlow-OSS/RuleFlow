@@ -139,6 +139,9 @@ class Plugin(ABC):
     Only one instance of this class is expected for each plugin PER APP.
     If session/flow-instance-specific behavior is desired, the session change signal must be watched and handled.
 
+    IMPORTANT NOTE: The view call self.panel() and then self.control() in that order. Thus, calls may need to be placed
+    strategically if self.panel() references something in self.controls().
+
     Required attributes:
     - name: str  # the name of the plugin
     - model: Model  # gives the plugin access to the model

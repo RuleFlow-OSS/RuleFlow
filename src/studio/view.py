@@ -16,8 +16,8 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer
 from textual.screen import Screen, ModalScreen
 from textual.widgets import (
-    DirectoryTree as _DT, TextArea as _TA, Button, Label,
-    Select, TabbedContent, OptionList, Input,
+    DirectoryTree as _DirectoryTree, TextArea as _TextArea, Button, Label,
+    Select, TabbedContent, OptionList, Input, SelectionList,
     Footer, ContentSwitcher, Static, Checkbox
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
@@ -42,7 +42,7 @@ class Spacer(Static):
         self.styles.width = '1fr'  # make it take up as much space as possible
 
 
-class DirectoryTree(_DT):
+class DirectoryTree(_DirectoryTree):
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
         for path in paths:
             if str(path.stem) == 'plugins' or str(path).endswith("__") or str(path).startswith("__"):
@@ -51,7 +51,7 @@ class DirectoryTree(_DT):
                 yield path
 
 
-class TextArea(_TA):
+class TextArea(_TextArea):
     def load_text(self, text: str | None) -> None:
         """Overrides the load_text method so that placeholders work properly..."""
         # NOTE: edit history is cleared
@@ -299,6 +299,7 @@ class EditorScreen(Screen):
         self.sig_button_pressed: Signal[Button.Pressed] = Signal()
         self.sig_checkbox_changed: Signal[Checkbox.Changed] = Signal()
         self.sig_input_submit: Signal[Input.Changed] = Signal()
+        self.sig_selection_list_toggled: Signal[SelectionListToggled] = Signal()
         self.sig_save_config_directive: Signal = Signal()
 
     @on(Button.Pressed)
@@ -315,6 +316,11 @@ class EditorScreen(Screen):
     def _emit_input_submit_signals(self, event: Input.Changed) -> None:
         """Handle emitting the input changed signal"""
         self.sig_input_submit.emit(event)
+
+    @on(SelectionList.SelectionToggled)
+    def _emit_selection_list_toggled(self, event: SelectionList.SelectionToggled) -> None:
+        """Handle emitting the selection list toggled signal"""
+        self.sig_selection_list_toggled.emit(event)
 
     def on_mount(self) -> None:
         self.__refresh_flow_selector__()
