@@ -390,9 +390,6 @@ class P(Plugin):
         )
 
     def _rebuild_rows(self) -> None:
-        """
-        # TODO: make the scrollbars remember position even after clear.
-        """
         a, b = self._render_range
         dt = self.data_table
         old_x, old_y = dt.scroll_x, dt.scroll_y
