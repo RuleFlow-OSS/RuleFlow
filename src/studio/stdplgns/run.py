@@ -87,6 +87,8 @@ class P(Plugin):
         btn: str = e.button.id
         if btn == 'btn-run':
             self.execute_run()
+        elif btn == 'btn-clear':
+            self.model.active_flow.flow.clear_evolution()
         elif btn == 'clear-log':
             self.log_view.clear()
             self.log_view.write(f"[bold green] --- Log Cleared --- [/bold green]")

@@ -360,9 +360,7 @@ class EditorScreen(Screen):
                 # yield Spacer()
                 yield Button("Run", id="btn-run", classes="action-btn green", compact=True)
                 yield Label("| ", classes="gray")
-                yield Button("Stop", id="btn-stop", classes="action-btn orange", compact=True)
-                yield Label("| ", classes="gray")
-                yield Button("Reset", id="btn-reset", classes="action-btn red", compact=True)
+                yield Button("clear", id="btn-clear", classes="action-btn orange", compact=True)
 
             # Code Editor
             self.code_editor_text_area: TextArea = TextArea.code_editor(

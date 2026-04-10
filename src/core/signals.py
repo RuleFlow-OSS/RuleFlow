@@ -1,9 +1,8 @@
-from typing import Callable, Any, TypeVar, Generic, ParamSpec
+from typing import Callable, Any
 from inspect import signature
 
-P = ParamSpec("P")
 
-class Signal(Generic[P]):
+class Signal[*T]:
     """Implements a QT-like signal system for interactive programming.
 
     For convenience, the emitter does not force the connected callable to take all the arguments that are emitted.
@@ -22,30 +21,30 @@ class Signal(Generic[P]):
     __slots__ = ('callables',)
 
     def __init__(self) -> None:
-        self.callables: list[tuple[Callable[P, Any], int]] = []
+        self.callables: list[tuple[Callable[[*T], Any], int]] = []
 
     @property
     def callables_count(self) -> int:
         return len(self.callables)
 
-    def emit(self, *args: P.args, **kwargs: P.kwargs) -> None:
+    def emit(self, *args: *T) -> None:
         for c, arg_len in self.callables:
-            c(*args[:arg_len], **kwargs)
+            c(*args[:arg_len])
 
-    def connect(self, c: Callable[P, Any]) -> None:
+    def connect(self, c: Callable[..., Any]) -> None:
         if c not in self.callables:
             self.callables.append((c, len(signature(c).parameters)))
 
-    def disconnect(self, c: Callable[P, Any]) -> None:
+    def disconnect(self, c: Callable[..., Any]) -> None:
         matches: list[int] = [i for i, (c_, _) in enumerate(self.callables) if c_ is c]
         for i in reversed(matches):
             self.callables.pop(i)
 
 
 if __name__ == "__main__":
-    t: Signal = Signal()
-    f1 = lambda a: print(a)
-    f2 = lambda a, b: print(a, b)
+    t: Signal[str, str] = Signal()
+    f1 = lambda a, b: print(a)
+    f2 = lambda a, b, c: print(a, b)
     t.connect(f1)
     t.connect(f2)
-    t.emit("yup", 'test')
+    t.emit("yup", "")

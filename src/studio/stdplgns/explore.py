@@ -1,21 +1,63 @@
 # Textual Imports
-from textual.widgets import Collapsible, TabPane, Input, Checkbox, Label, DataTable, SelectionList, Button
-from rich.text import Text
+from textual.widgets import Collapsible, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList, Button
 from textual.widgets.data_table import CellKey
 from textual.widget import Widget
 from textual.coordinate import Coordinate
 from textual.widgets.selection_list import Selection
+from textual.events import MouseMove
 
 # Standard Imports
 from typing import Iterator
 from core.numlib import INF, str_to_num, is_infinity
-from core.engine import Event as FlowEvent, SpaceState
+from core.engine import Event as FlowEvent, SpaceState, Cell as FlowCell, DeltaCell
+from core.prettier import SpaceStateStringFormatter
+from core.signals import Signal
 from studio.model import Plugin, FlowLangBase
+
+
+class DataTable(_DataTable):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sig_mouse_over_inner_cell: Signal[Coordinate | None, int] = Signal()
+        self.enabled_sig_mouse_over_space_cell: bool = False
+
+    def on_mouse_move(self, event: MouseMove) -> None:
+        if not self.enabled_sig_mouse_over_space_cell:
+            return
+        # Grab the row/col directly from the exact terminal cell the mouse is touching.
+        meta = event.style.meta  # metadata holds the row and column info
+        # If the mouse is over the header or the empty space below the table, this metadata won't exist.
+        if not meta or "row" not in meta or "column" not in meta or meta['row'] == -1:
+            self.sig_mouse_over_inner_cell.emit(None, 0)
+            return
+        coord = Coordinate(meta["row"], meta["column"])
+        start_x = 0
+        PADDING = self.cell_padding
+        columns = list(self.columns.values())
+        for i in range(coord.column):  # Calculate start_x ONLY for columns BEFORE the hovered one
+            col = columns[i]
+            if col.auto_width:
+                base_width = max(col.width or 0, col.content_width or 0)
+            else:
+                base_width = col.width or col.content_width or 0
+            # Add this column's total footprint (width + 1 left pad + 1 right pad)
+            start_x += base_width + 2 * PADDING
+        # Calculate the specific character offset inside the cell
+        virtual_x = event.x + self.scroll_offset.x
+        # Subtract start_x to zero out the column, then subtract 1 for THIS column's left padding
+        char_offset = (virtual_x - start_x) - PADDING
+
+        # emit the signal
+        self.sig_mouse_over_inner_cell.emit(coord, char_offset)
 
 
 class P(Plugin):
     def on_initialized(self) -> None:
         self.name = 'explore'
+
+        # tools
+        self.space_state_formatter: SpaceStateStringFormatter = SpaceStateStringFormatter()
+        self._cell_ids_to_highlight: frozenset[int] = frozenset()
 
         # attributes
         self._render_range: tuple[int, int] = (-100, INF)
@@ -31,6 +73,10 @@ class P(Plugin):
         # connect view signals
         self.view.sig_input_submit.connect(self.handle_input_submit)
         self.view.sig_selection_list_toggled.connect(self.handle_selection_toggle)
+        self.view.sig_checkbox_changed.connect(self.handle_checkbox_change)
+
+        # temp trackers
+        self.__last_hover_coord_and_offset: tuple[Coordinate, int] = (Coordinate(0, 0), 0)
 
     def _column_control_bitmap_zero_out(self):
         """Zeros out the column bitmap"""
@@ -60,25 +106,32 @@ class P(Plugin):
             self.hidden_space_columns.border_title = 'Hidden Space Columns'
             yield self.hidden_space_columns
 
-        with Collapsible(title='Pattern Queries', collapsed=False):
-            self.search_pattern = Input()
-            self.search_pattern.border_title = 'Search Pattern'
-            yield self.search_pattern
-            self.created_at = Input()
-            self.created_at.border_title = 'Created at Event(s)'
-            yield self.created_at
-            self.destroyed_at = Input()
-            self.destroyed_at.border_title = 'Destroyed at Event(s)'
-            yield self.destroyed_at
-            yield Button('Find', id="find-pattern-filters")
+        with Collapsible(title='Cell Rendering', collapsed=False):
+            self.style_controls = SelectionList(
+                Selection("Cell Styling", 0, True),
+                Selection(" ╰─ On Symbol", 1, False),
+                Selection("Show Symbols", 2, True),
+                Selection("Cell Padding", 3, True),
+                Selection("Clear on Override", 4, False),
+                id='style-controls'
+            )
+            yield self.style_controls
+            self.style_map = Input("auto", placeholder='e.g. auto or A: red', id='style-map')
+            self.style_map.border_title = 'Style Override'
+            yield self.style_map
+            self.symbol_map = Input("auto", placeholder='e.g. auto or A: Z', id='symbol-map')
+            self.symbol_map.border_title = 'Symbol Map'
+            yield self.symbol_map
 
-        with Collapsible(title='Selection Info', collapsed=False):
-            self.selection_info_label = Label('Event Info:\n- Cells: 0\n- Connected: 0\n')
-            yield self.selection_info_label
-            self.selection_info_label = Label('Cell Info:\n- created at: None\n- destroyed at: None\n')
-            yield self.selection_info_label
-            self.hover_explorer = Checkbox('Hover Explorer')
+        with Collapsible(title='Hover Explorer', collapsed=False):
+            self.hovered_info_label = Label()
+            self._reset_hovered_info_label()
+            yield self.hovered_info_label
+            self.hover_explorer = Checkbox('Hover Explorer', id='hover-explorer')
             yield self.hover_explorer
+            self.hover_style = Input("on black", placeholder='e.g. on red or bold blue', id='hover-style')
+            self.hover_style.border_title = 'Hover Style'
+            yield self.hover_style
 
         yield Label()
 
@@ -91,7 +144,7 @@ class P(Plugin):
                     str_to_num(rs[0]) if rs[0] else 0,
                     str_to_num(rs[1]) if rs[1] else INF
                 )
-                self._rebuild_rows(self.model.active_flow.flow)
+                self._rebuild_rows()
             except:
                 self.view.notify('Invalid render range.', severity='warning')
                 e.input.value = '{0}:{1}'.format(*self._render_range)
@@ -126,6 +179,12 @@ class P(Plugin):
             except:
                 self.view.notify('Invalid hidden ranges. Values/Ranges must be between 0 and 1000.', severity='warning')
 
+        elif _id in ('style-map', 'symbol-map'):
+            self._handle_styling_update()
+
+        elif _id == 'hover-style':
+            self.space_state_formatter.cell_id_style = e.value.strip()
+
     def handle_selection_toggle(self, e: SelectionList.SelectionToggled):
         _id: str = e.selection_list.id
         if _id == 'column-controls':
@@ -133,13 +192,125 @@ class P(Plugin):
             for i in e.selection_list.selected:
                 self._columns_control_bitmap[i] = True
             self._rebuild_columns()
+        if _id == 'style-controls':
+            self._handle_styling_update()
+
+    def handle_checkbox_change(self, e: Checkbox.Changed):
+        _id: str = e.checkbox.id
+        if _id == 'hover-explorer':
+            self.data_table.enabled_sig_mouse_over_space_cell = e.checkbox.value
 
     def panel(self) -> TabPane | None:
         self.data_table = DataTable(id='data-table')
+        self.data_table.sig_mouse_over_inner_cell.connect(self._handle_mouse_over_data_table)
         return TabPane(
             self.name.title(),
             self.data_table
         )
+
+    def _handle_styling_update(self):
+        control_bitmap: list[bool] = [False, False, False, False, False]
+        for i in self.style_controls.selected: control_bitmap[i] = True
+
+        try:
+            style_map: dict[str, str] = {
+                k.strip(): v.strip() for k, v in (p.split(':') for p in self.style_map.value.split(','))
+            } if self.style_map.value != 'auto' else None
+
+            symbol_map: dict[str, str] = {
+                k.strip(): v.strip() for k, v in (p.split(':') for p in self.symbol_map.value.split(','))
+            } if self.symbol_map.value != 'auto' else None
+        except:
+            self.view.notify('Invalid style map.', severity='error')
+            return
+
+        # noinspection PyTypeChecker
+        self.space_state_formatter.config(
+            *control_bitmap[:4],
+            style_map,
+            control_bitmap[4],
+            symbol_map
+        )
+        self._rebuild_rows()
+
+    def _reset_hovered_info_label(self):
+        self.hovered_info_label.content = """[bold]Event Info[/bold]
+• ----
+• ----
+• ----
+• ----
+• ----
+• ----
+
+[bold]Cell Info[/bold]
+• ----
+• ----
+• ----
+"""
+
+    def _handle_mouse_over_data_table(self, coord: Coordinate | None, offset: int) -> None:
+        def reset_highlighted():
+            self._reset_hovered_info_label()
+            if self._cell_ids_to_highlight:
+                self._cell_ids_to_highlight = frozenset()
+                self._rebuild_rows()
+        if (not coord
+                or offset == -1
+                or self.data_table.coordinate_to_cell_key(coord).column_key in ('event', 'distance', 'connected')):
+            reset_highlighted()
+            return
+
+        # calculate offset of the cell index (because of different padding/rendering options)
+        cell_content: str = str(self.data_table.get_cell_at(coord))
+        if cell_content.startswith(' '):  # if padding of " " around symbols is being used.
+            if cell_content.startswith('  '):  # if not rendering symbols but blocks of "  "
+                offset = offset // 2  # one extra symbol needs to be removed
+            else:
+                offset = offset // 3  # two extra symbols need to be removed
+
+        # if the last cell was the same
+        if self.__last_hover_coord_and_offset == (coord, offset):
+            return
+        self.__last_hover_coord_and_offset = (coord, offset)
+
+        cell_key: CellKey = self.data_table.coordinate_to_cell_key(coord)
+        row_idx: int = int(cell_key.row_key.value)
+        column_idx: int = int(cell_key.column_key.value)
+
+        # grab all relevant information about the selected space
+        event: FlowEvent = self.model.active_flow.flow.events[row_idx]
+        spaces: tuple[SpaceState, ...] = tuple(event.spaces)
+        space_state: SpaceState = spaces[column_idx]
+
+        # update the rows
+        if offset >= len(space_state):
+            reset_highlighted()
+            return
+        flow_cell: FlowCell = space_state.get_all_cells()[offset]
+        self._cell_ids_to_highlight = frozenset((id(flow_cell),))
+        self._rebuild_rows()
+
+        # update the hover info labels
+        try:
+            cell_destroyed_at: int = flow_cell.destroyed_at[column_idx]
+            lifespan: int = cell_destroyed_at - flow_cell.created_at
+        except IndexError:
+            cell_destroyed_at: None = None
+            lifespan: None = None
+        connected_events = tuple(event.causally_connected_events)
+        self.hovered_info_label.content = f"""[bold]Event #{event.time} Info[/bold]
+• Created Spaces: {len(spaces)}
+• Affected Cells: {len(tuple(event.affected_cells))}
+• Space Size: {len(space_state)}
+• Causal Distance: {event.causal_distance_to_creation}
+• Connected Events Abs: {len(connected_events)}
+• Connected Events Set: {len(set(connected_events))}
+
+[bold]Cell #{offset} Info[/bold]
+• Created at: {flow_cell.created_at}
+• Destroyed at: {cell_destroyed_at}
+• Lifespan: {lifespan}
+"""
 
     def on_evolved(self, f: FlowLangBase, steps: int) -> None:
         cft = self.cft
@@ -174,7 +345,10 @@ class P(Plugin):
         cft(self._refresh_column_widths)
 
     def on_clear(self):
-        self.cft(self.data_table.clear)
+        try:
+            self.cft(self.data_table.clear)  # this function may be called within the main thread.
+        except RuntimeError:
+            self.data_table.clear()
 
     def _add_row(self, event: FlowEvent):
         columns = []
@@ -198,31 +372,39 @@ class P(Plugin):
 
         # Process the space columns
         spaces: Iterator[SpaceState] = event.spaces
+        formatter: SpaceStateStringFormatter = self.space_state_formatter
+        cells_to_highlight: frozenset[int] = self._cell_ids_to_highlight
         hidden: set[int] = self._hidden_space_columns
         for i in range(self._space_columns_limit):
             try:
                 space = spaces.__next__()  # we must always increment next (even though it may be hidden, that is what makes the check work)
                 if i in hidden:
                     continue
-                columns.append(space)
+                columns.append(formatter(space, cells_to_highlight))
             except StopIteration:
                 break
-
         # Add everything as a row
         self.data_table.add_row(
             *columns,
             key=str(event.time)
         )
 
-    def _rebuild_rows(self, f: FlowLangBase) -> None:
+    def _rebuild_rows(self) -> None:
+        """
+        # TODO: make the scrollbars remember position even after clear.
+        """
         a, b = self._render_range
-        self.data_table.clear()
-        for event in f.events[a:b + (1 if b > 0 else 0)]:
+        dt = self.data_table
+        old_x, old_y = dt.scroll_x, dt.scroll_y
+        dt.clear()
+        for event in self.model.active_flow.flow.events[a:b + (1 if b > 0 else 0)]:
             self._add_row(event)
         self._refresh_column_widths()
+        dt.scroll_to(x=old_x, y=old_y, animate=False)
 
     def _rebuild_columns(self, rebuild_rows: bool = True) -> None:
         dt = self.data_table
+        old_x, old_y = dt.scroll_x, dt.scroll_y
         dt.clear(columns=True)
         if self._columns_control_bitmap[0]:
             dt.add_column('Event', key='event')
@@ -236,7 +418,8 @@ class P(Plugin):
                 continue
             dt.add_column(_:=str(i), key=_)
         if rebuild_rows:
-            self._rebuild_rows(self.model.active_flow.flow)
+            self._rebuild_rows()
+        dt.scroll_to(x=old_x, y=old_y, animate=False)
 
     def _refresh_column_widths(self) -> None:
         """Update the column widths as Textual does not currently do that for us when removing rows."""
