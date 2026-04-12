@@ -1,4 +1,6 @@
 # Textual Imports
+from idlelib.outwin import file_line_pats
+
 from textual.widgets import Collapsible, TabPane, Input, Checkbox, Button, ProgressBar, Label, RichLog
 from textual.widget import Widget
 from textual.containers import ScrollableContainer, Horizontal
@@ -93,7 +95,7 @@ class P(Plugin):
         elif btn == 'btn-undo':
             self.execute_undo()
         elif btn == 'btn-clear':
-            self.model.active_flow.flow.clear_evolution()
+            self.model.flow.clear_evolution()
         elif btn == 'clear-log':
             self.log_view.clear()
             self.log_view.write(f"[bold green] --- Log Cleared --- [/bold green]")
@@ -129,14 +131,14 @@ class P(Plugin):
         # time.sleep(0.5)
 
     def _execute(self) -> None:
-        # use self.cft to be thread-safe (according to docs on Workers)
+        # use self.cft to be thread-safe on textual side (according to docs on Workers)
         if self.mem_profile.value:
             mem_start = self._process.memory_info().rss / 1024 / 1024
             start_time = time.perf_counter()
 
         # execute the FlowLang
         try:
-            self.model.active_flow.flow.interpret(self.view.code_editor_text_area.text)
+            self.model.flow.interpret(self.view.code_editor_text_area.text)
         except Exception as e:
             # Handle the exception
             if self.show_traceback.value:
@@ -166,9 +168,9 @@ class P(Plugin):
 
     def execute_run(self) -> None:
         """Handles the flow execution and updates the UI components."""
-        active_flow = self.model.active_flow
-        if not active_flow:
-            self.log_view.write("[bold red]Studio Error:[/bold red] No active flow selected to run.")
+        flow_path = self.model.flow_path
+        if not flow_path:
+            self.log_view.write("[bold red]Studio Error:[/bold red] No flow selected to run.")
             return
         if self._running_thread and self._running_thread.is_running:  # do not run while thread is active
             self.log_view.write("[bold red]Studio Error:[/bold red] A flow thread is currently running.")
@@ -177,24 +179,25 @@ class P(Plugin):
             self._execute,
             thread=True
         )
-        self.log_view.write(f'[bold green]Run "{active_flow.name}" flow...[/bold green]')
+        self.log_view.write(f'[bold green]Run {flow_path.name}...[/bold green]')
         # TODO: maybe more info will be logged at some point (if deemed useful)
 
     def execute_undo(self) -> None:
         """Handles the flow undo and updates the UI components."""
-        active_flow = self.model.active_flow
-        if not active_flow:
-            self.log_view.write("[bold red]Studio Error:[/bold red] No active flow selected to undo.")
+        flow_path = self.model.flow_path
+        if not flow_path:
+            self.log_view.write("[bold red]Studio Error:[/bold red] No flow selected to undo.")
             return
         if self._running_thread and self._running_thread.is_running:  # do not run while thread is active
             self.log_view.write("[bold red]Studio Error:[/bold red] A flow thread is currently running.")
             return
         try:
+            steps: int = int(self.undo_steps.value)
             self._running_thread = self.view.run_worker(
-                lambda: self.model.active_flow.flow.undo(int(self.undo_steps.value)),
+                lambda: self.model.flow.undo(steps),
                 thread=True
             )
-            self.log_view.write(f'[bold green]Undo "{active_flow.name}" flow...[/bold green]')
+            self.log_view.write(f'[bold green]Undo last {steps} steps...[/bold green]')
         except:
             self.log_view.write("[bold red]Studio Error:[/bold red] Could not execute undo command.")
 

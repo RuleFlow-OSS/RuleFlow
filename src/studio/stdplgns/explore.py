@@ -1,6 +1,7 @@
 # Textual Imports
 from rich.text import Text
-from textual.widgets import Collapsible, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList
+from textual.widgets import (Collapsible, TabPane, Input, Select,
+                             Checkbox, Label, DataTable as _DataTable, SelectionList, ContentSwitcher)
 from textual.widgets.data_table import CellKey
 from textual.widget import Widget
 from textual.coordinate import Coordinate
@@ -9,7 +10,7 @@ from textual.containers import VerticalScroll, Horizontal, Vertical
 from textual.events import MouseMove
 
 # Standard Imports
-from typing import Iterator, Sequence
+from typing import Iterator, Sequence, cast
 from core.numlib import INF, str_to_num, is_infinity
 from core.engine import Event as FlowEvent, SpaceState, Cell as FlowCell, DeltaCell, DeltaSpace, DeltaSpaces
 from core.prettier import SpaceStateStringFormatter
@@ -61,7 +62,6 @@ class RulesetDashboard(VerticalScroll):
     RulesetDashboard Horizontal {
         height: auto;
         width: 100%;
-        margin-bottom: 1;
     }
     RulesetDashboard Vertical {
         width: 1fr;
@@ -86,10 +86,12 @@ class P(Plugin):
         self._columns_control_bitmap: list[bool] = [True, False, False, False, False, False]
 
         # connect model signals
-        self.model.active_flow.flow.on_evolved_n.connect(self.on_evolved)
-        self.model.active_flow.flow.on_undone_n.connect(self.on_undo)
-        self.model.active_flow.flow.on_clear.connect(self.on_clear)
-        self.model.active_flow.flow.on_ruleset_set.connect(lambda f: self.cft(self._rebuild_ruleset_table, f.ruleset.rules, self.ruleset_table))
+        self.model.flow.on_evolved_n.connect(self.on_evolved)
+        self.model.flow.on_undone_n.connect(self.on_undo)
+        self.model.flow.on_clear.connect(self.on_clear)
+        self.model.flow.on_ruleset_set.connect(
+            lambda f: self.cft(self._rebuild_ruleset_table, f.ruleset.rules, self.ruleset_table)
+        )
 
         # connect view signals
         self.view.sig_input_submit.connect(self.handle_input_submit)
@@ -228,6 +230,8 @@ class P(Plugin):
             self.hover_ruleset_enabled.disabled = not e.value
             if not e.value:
                 self.hover_ruleset_enabled.value = self.hovered_ruleset_container.display = False
+                self._reset_hovered_info_label()
+                self._cell_ids_to_highlight = frozenset()
         if _id == 'hover-ruleset-enabled' and self.hover_explorer.value:
             self.hovered_ruleset_container.display = e.value
             if not e.value:
@@ -237,7 +241,7 @@ class P(Plugin):
 
     def panel(self) -> TabPane | None:
         # Ruleset Table
-        self.ruleset_table = _DataTable(id='hovered-ruleset-table', show_cursor=False)
+        self.ruleset_table = _DataTable(id='ruleset-table', show_cursor=False)
         self.ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group')
         self.ruleset_container = Vertical(
             Label('[bold] Active Ruleset Table [/bold]'),
@@ -245,7 +249,7 @@ class P(Plugin):
         )
 
         # Ruleset Table
-        self.hovered_ruleset_table = _DataTable(id='ruleset-table', show_cursor=False)
+        self.hovered_ruleset_table = _DataTable(id='hovered-ruleset-table', show_cursor=False)
         self.hovered_ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group')
         self.hovered_ruleset_container = Vertical(
             Label('[bold] Hovered Event Ruleset Table [/bold]'),
@@ -263,6 +267,7 @@ class P(Plugin):
                     self.ruleset_container,
                     self.hovered_ruleset_container
                 ),
+                Label('[bold] Evolution Table [/bold]'),
                 self.data_table
             )
         )
@@ -292,7 +297,7 @@ class P(Plugin):
         )
 
         # noinspection PyTypeChecker
-        self._rebuild_ruleset_table(self.model.active_flow.flow.ruleset.rules, self.ruleset_table)
+        self._rebuild_ruleset_table(self.model.flow.ruleset.rules, self.ruleset_table)
         self._rebuild_rows()
 
     def _reset_hovered_info_label(self):
@@ -342,7 +347,7 @@ class P(Plugin):
         column_idx: int = int(cell_key.column_key.value)
 
         # grab all relevant information about the selected space
-        flow: FlowLangBase = self.model.active_flow.flow
+        flow: FlowLangBase = self.model.flow
         event: FlowEvent = flow.events[row_idx]
         spaces: tuple[tuple[DeltaSpaces, DeltaSpace, SpaceState], ...] = tuple(event.spaces_with_metadata)
         space_state: SpaceState = spaces[column_idx][2]
@@ -513,7 +518,7 @@ class P(Plugin):
         dt = self.data_table
         old_x, old_y = dt.scroll_x, dt.scroll_y
         dt.clear()
-        for event in self.model.active_flow.flow.events[a:b + (1 if b > 0 else 0)]:
+        for event in self.model.flow.events[a:b + (1 if b > 0 else 0)]:
             self._add_row(event)
         self._refresh_column_widths()
         dt.scroll_to(x=old_x, y=old_y, animate=False)

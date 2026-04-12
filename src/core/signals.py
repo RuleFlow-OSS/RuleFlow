@@ -43,6 +43,8 @@ class Signal[*T]:
 
 if __name__ == "__main__":
     t: Signal[str, str] = Signal()
+    t1: Signal = Signal()
+    t1.emit()  # highlighting bug...
     f1 = lambda a, b: print(a)
     f2 = lambda a, b, c: print(a, b)
     t.connect(f1)

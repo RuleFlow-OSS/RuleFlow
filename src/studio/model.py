@@ -4,7 +4,6 @@ from lang import FlowLangBase, FlowLang  # in the implementation
 from abc import ABC, abstractmethod
 from textual.widgets import TabPane
 from textual.widget import Widget
-from copy import deepcopy
 
 # used for dynamic imports and path management
 from pathlib import Path
@@ -20,37 +19,6 @@ else:
     class EditorScreen(object): pass  # must define due to reference in type casting
 
 
-class Flow:
-    """
-    Represents a flow instance session (includes API for interacting with .flow files on the disc).
-    """
-    def __init__(self) -> None:
-        # Metadata
-        self.name: str = ""
-        self.file_path: Path | None = None
-        self._edit_hash: int = 0  # used to check if some text has already been saved...
-
-        # Flow State
-        self.flow: FlowLangBase = FlowLang()
-
-    def write_file(self, text: str) -> bool:
-        """Writes to the file and returns True if the file was written to."""
-        if self.file_path and self._edit_hash != (eh:=hash(text)):
-            self.file_path.write_text(text)
-            self._edit_hash = eh
-            return True
-        return False
-
-    def read_file(self) -> str | None:
-        if self.file_path:
-            self._edit_hash = hash(text:=self.file_path.read_text())
-            return text
-        return None
-
-    def open_file(self, path: Path | None):
-        self.file_path = path
-
-
 class Model:
     """
     The source of truth for the application state (a Singleton Pattern).
@@ -60,11 +28,14 @@ class Model:
     def __init__(self, name: str, project_path: Path, view: EditorScreen) -> None:
         """Name and project path are passed to initiate the model. The textual app is simply passed as a reference so
         that plugins maintain access to it."""
-        # ======== Basic Project Config ========
+        # ======== Project Attributes ========
         self.project_name: str = name  # name the user has given the project
         self.project_path: Path = project_path
+        self.flow_path: Path | None = None
+        self._edit_hash: int = 0  # used to check if some text has already been saved...
+        self.flow: FlowLangBase = FlowLang()
 
-        # ======== View Hook ========
+        # ======== View Hook (for access through model/plugin) ========
         self.view: EditorScreen = view
 
         # ======== Plugins ========
@@ -93,43 +64,26 @@ class Model:
                     obj._view = self.view
                     self.plugins.append(obj)
 
-        # ======== Active Flows ========
-        self.flows: list[Flow] = []
-        self.active_flow: Optional[Flow] = None
-
-        # add default flow
-        self.flows.append(_:=Flow())
-        _.name = "Root"
-        self.active_flow = _
-
         # ======== Initialize any children models (plugins) ========
         for p in self.plugins:
             p.on_initialized()
 
-    def get_flow_options(self) -> list[str]:
-        """
-        Returns list of tuples formatted for a Textual Select widget.
-        """
-        return [f.name for f in self.flows]
+    def write_file(self, text: str) -> bool:
+        """Writes to the file and returns True if the file was written to."""
+        if self.flow_path and self._edit_hash != (eh:=hash(text)):
+            self.flow_path.write_text(text)
+            self._edit_hash = eh
+            return True
+        return False
 
-    def create_new_flow(self, name: str, branch_from_current: bool) -> bool:
-        """Create a new Flow object and return True if the flow was created, otherwise False."""
-        if name in (f.name for f in self.flows):
-            return False
-        self.flows.append(_:=(
-            deepcopy(self.active_flow) if self.active_flow and branch_from_current else Flow()
-        ))
-        _.name = name
-        self.active_flow = _
-        return True
+    def read_file(self) -> str | None:
+        if self.flow_path:
+            self._edit_hash = hash(text:=self.flow_path.read_text())
+            return text
+        return None
 
-    def delete_selected_flow(self) -> None:
-        new_flow_idx: int = self.flows.index(self.active_flow) - 1
-        self.flows.remove(self.active_flow)
-        if len(self.flows) > 0:
-            self.active_flow = self.flows[new_flow_idx]
-        else:
-            self.active_flow = None
+    def open_file(self, path: Path | None):
+        self.flow_path = path
 
 
 # ================ Plugin Support ================
