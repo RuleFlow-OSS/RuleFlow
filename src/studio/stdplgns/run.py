@@ -1,6 +1,7 @@
+"""
+This plugin provides basic running/undoing features, hot-reload, and several other utilities for interactive with flows.
+"""
 # Textual Imports
-from idlelib.outwin import file_line_pats
-
 from textual.widgets import Collapsible, TabPane, Input, Checkbox, Button, ProgressBar, Label, RichLog
 from textual.widget import Widget
 from textual.containers import ScrollableContainer, Horizontal
@@ -56,6 +57,8 @@ class P(Plugin):
             yield self.mem_profile
             self.show_traceback = Checkbox('Show tracebacks')
             yield self.show_traceback
+
+        yield Label()
 
         self.hot_reload_timer: Timer = self.view.set_interval(
             1, self._handle_hot_reload,

@@ -7,4 +7,4 @@ A -> ABA;
 
 // Evolve n times
 //@clear();
-@evolve(1);
+@evolve(36);

@@ -1,3 +1,6 @@
+"""
+This plugin provides an exploratory environment for the evolutions of cellular systems.
+"""
 # Textual Imports
 from rich.text import Text
 from textual.widgets import (Collapsible, TabPane, Input, Select,
@@ -80,7 +83,7 @@ class P(Plugin):
         self._cell_ids_to_highlight: frozenset[int] = frozenset()
 
         # attributes
-        self._render_range: tuple[int, int] = (-100, INF)
+        self._render_range: tuple[int, int, int] = (-100, INF, 1)
         self._space_columns_limit: int = 1
         self._hidden_space_columns: set[int] = set()
         self._columns_control_bitmap: list[bool] = [True, False, False, False, False, False]
@@ -118,7 +121,7 @@ class P(Plugin):
                 Selection("Event Indices", 0, control_bits[0]),
                 Selection("Causal Distance", 1, control_bits[1]),
                 Selection("Causally Connected", 2, control_bits[2]),
-                Selection(" ├─ Collapsed", 3, control_bits[3]),
+                Selection(" ├─ Unique", 3, control_bits[3]),
                 Selection(" ├─ Sorted", 4, control_bits[4]),
                 Selection(" ╰─ Counted", 5, control_bits[5]),
                 id='column-controls'
@@ -168,14 +171,16 @@ class P(Plugin):
         if _id == 'render-limit':
             try:
                 rs: list[str] = e.value.strip().split(':')
+                if len(rs) == 2: rs.append('')  # it must always be 3 things
                 self._render_range = (
-                    str_to_num(rs[0]) if rs[0] else 0,
-                    str_to_num(rs[1]) if rs[1] else INF
+                    int(rs[0]) if rs[0] else 0,
+                    str_to_num(rs[1]) if rs[1] else INF,
+                    abs(int(rs[2])) if rs[2] else 1
                 )
                 self._rebuild_rows()
             except:
                 self.view.notify('Invalid render range.', severity='warning')
-                e.input.value = '{0}:{1}'.format(*self._render_range)
+                e.input.value = '{0}:{1}:{2}'.format(*self._render_range)
 
         elif _id == 'space-columns-limit':
             try:
@@ -379,8 +384,8 @@ class P(Plugin):
 • Branched Spaces: {len(spaces) - 1}
 • Space Size: {len(space_state)}
 • Causal Distance: {event.causal_distance_to_creation}
-• Connected Abs: {len(connected_events)}
-• Connected Set: {len(set(connected_events))}
+• Connected Total: {len(connected_events)}
+• Connected Unique: {len(set(connected_events))}
 • Created Cells: {created_cells}
 • Destroyed Cells: {destroyed_cells}
 
@@ -514,11 +519,11 @@ class P(Plugin):
         )
 
     def _rebuild_rows(self) -> None:
-        a, b = self._render_range
+        a, b, c = self._render_range
         dt = self.data_table
         old_x, old_y = dt.scroll_x, dt.scroll_y
         dt.clear()
-        for event in self.model.flow.events[a:b + (1 if b > 0 else 0)]:
+        for event in self.model.flow.events[a:b + (1 if b > 0 else 0):c]:
             self._add_row(event)
         self._refresh_column_widths()
         dt.scroll_to(x=old_x, y=old_y, animate=False)

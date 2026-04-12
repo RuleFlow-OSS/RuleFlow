@@ -1,67 +1,33 @@
-"""Provides all the tools for optimized and rigorous graph analysis."""
+"""Provides all the tools for optimized and rigorous graph analysis.
+
+FRAMEWORK NOTES:
+- use pyvis Network to render interactive graphs.
+
+TODO:
+- Redesign to support live graph updating (to keep up to date with flow).
+- Add more tools for seamless analysis and integrations.
+"""
 from core.engine import Flow
-from networkx import MultiDiGraph, write_gexf
-from pyvis.network import Network
+from networkx import MultiDiGraph
+from typing import Sequence, Self
 
 
-class CausalGraph(MultiDiGraph):
-    def __init__(self, flow: Flow) -> None:
-        super().__init__()
-        self.flow: Flow = flow
-
-        # TODO - maybe add option to collapse edges.
-        # TODO: make it so that it can be dynamically adjusted as Flow evolves.
+class EventCausalityGraph(MultiDiGraph):
+    def build(self, flow: Flow,
+                 event_range: tuple[int, int, int],
+                 collapse_multi_edges: bool = False) -> Self:
         # construct causal graph - because each node is literally the time, and thus index, it can be used to query to the actual event for more granular information.
-        for event in flow.events:
-            # if event.time == 0: continue  # Skip the initial event (no parents)
-            self.add_node(event.time, label=f'{event.time}', title=f'Causal Distance: {event.causal_distance_to_creation}\nSpace: {event}', shape='box')  # add the node
-            for parent_time in event.causally_connected_events:
-                if parent_time is not None:
-                    self.add_edge(parent_time, event.time)
-
-    @property
-    def adjacency_matrix(self):
-        return None
-
-    @property
-    def dijkstra_algorithm(self):
-        return None
-
-    # same as the the glxl file...
-    def save_to_gephi_file(self, path: str) -> None:
-        """Save to the GLXL file format"""
-        write_gexf(self, path)
-
-    def render_in_browser(self, filename: str = "causal_network.html",
-                          show_controls: list[str] | bool | None = None,
-                          shape: str = 'box',
-                          show_state: bool = False,
-                          show_label: bool = True,
-                          show_distance: bool = True,
-                          collapse_edges: bool = False):
-        """
-        Uses pyvis to render the causal network from a Flow object.
-        """
-
-        net = Network(height="800px", width="100%", directed=True, filter_menu=True, select_menu=True, cdn_resources='remote')
-        net.from_nx(self)
-        if show_controls:
-            net.show_buttons(filter_=show_controls)
-        else:
-            net.set_options("""
-            {
-                "physics": {
-                    "minVelocity": 0.75
-                },
-                "interaction": {
-                    "navigationButtons": true
-                }
-            }
-            """)
-
-        try:
-            net.save_graph(filename)
-            print(f"Successfully generated '{filename}'!")
-            print("Open this file in your browser to view the interactive graph.")
-        except Exception as e:
-            print(f"Error generating graph: {e}")
+        connected_container: type[tuple] | type[set] = set if collapse_multi_edges else tuple
+        for event in flow.events[event_range[0]:event_range[1]+1:event_range[2]]:
+            causally_connected: Sequence[int] = connected_container(event.causally_connected_events)
+            self.add_node(
+                event.time,
+                # these get passed on to the nodes of VisJS network.
+                label=f'{event.time}',
+                title=f' Causal Distance: {event.causal_distance_to_creation}\n'
+                      f'Connected Events: {len(causally_connected)}',
+                shape='box'
+            )
+            for parent_time in causally_connected:
+                self.add_edge(parent_time, event.time)
+        return self
