@@ -1,3 +1,7 @@
+"""
+This code currently contains rudimentary enumeration decoder tools for rulesets. Later we will want to
+generalize this into framework of tools for this type of tooling.
+"""
 import math
 
 

@@ -1,4 +1,4 @@
-from core import enumerator
+from integrations import enumerator
 from lark import Lark, Transformer
 from core.numlib import str_to_num, INF
 from typing import Any, cast

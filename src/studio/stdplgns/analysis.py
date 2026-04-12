@@ -38,4 +38,6 @@ class P(Plugin):
 
         with Collapsible(title='VisJS Network Viewer', collapsed=True):
             yield Label("Options for the web \ngraph renderer.")
+
+
 plugin = P()

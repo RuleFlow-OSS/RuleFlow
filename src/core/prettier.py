@@ -88,7 +88,7 @@ class SpaceStateStringFormatter:
         return Text(end='').join(rm.get(str(c), Text(str(c), end='')) for c in string)
 
 if __name__ == "__main__":
-    from src.implementations.sss import SSS
+    from implementations.sss import SSS
     from rich.console import Console
 
     # run your simulation
