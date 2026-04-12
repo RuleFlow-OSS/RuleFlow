@@ -179,6 +179,10 @@ class P(Plugin):
             self.view.notify(f"Failed to open viewer: {str(e)}", severity="error")
 
     def _export_as_format(self):
+        if not self._causal_graph:
+            self.view.notify('No graph has been built yet!', severity='error')
+            return
+
         funcs = [nx.write_gexf, nx.write_graphml, nx.write_sparse6, nx.write_graph6,
                  nx.write_gml, nx.write_adjlist, nx.write_multiline_adjlist]
         stems = ['.gexf', '.graphml', '.sparse6', '.graph6', '.gml', '.adjlist', '.multi_adjlist']
