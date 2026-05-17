@@ -160,7 +160,7 @@ class P(Plugin):
             yield self.hover_explorer
             self.hover_ruleset_enabled = Checkbox('Hovered Event Ruleset', disabled=True, id='hover-ruleset-enabled')
             yield self.hover_ruleset_enabled
-            self.hover_style = Input("on black", placeholder='e.g. on red or bold blue', id='hover-style')
+            self.hover_style = Input("on yellow", placeholder='e.g. on red or bold blue', id='hover-style')
             self.hover_style.border_title = 'Hover Style'
             yield self.hover_style
 
@@ -277,6 +277,7 @@ class P(Plugin):
             )
         )
 
+    # noinspection PyTypeChecker
     def _handle_styling_update(self):
         control_bitmap: list[bool] = [False, False, False, False, False]
         for i in self.style_controls.selected: control_bitmap[i] = True
@@ -322,6 +323,7 @@ class P(Plugin):
 • ----
 """
 
+    # noinspection PyTypeChecker
     def _handle_mouse_over_data_table(self, coord: Coordinate | None, offset: int) -> None:
         def reset_highlighted():
             self._reset_hovered_info_label()

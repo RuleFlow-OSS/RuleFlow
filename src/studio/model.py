@@ -1,5 +1,5 @@
 """The model side of the MVC paradigm"""
-from typing import Optional, Iterator, TYPE_CHECKING, cast, Callable
+from typing import Iterator, TYPE_CHECKING, cast, Callable
 from lang import FlowLangBase, FlowLang  # in the implementation
 from abc import ABC, abstractmethod
 from textual.widgets import TabPane

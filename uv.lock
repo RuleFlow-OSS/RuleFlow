@@ -770,6 +770,7 @@ dependencies = [
     { name = "pyrsistent" },
     { name = "pyvis" },
     { name = "regex" },
+    { name = "rich" },
     { name = "textual" },
 ]
 
@@ -784,6 +785,7 @@ requires-dist = [
     { name = "pyrsistent", specifier = ">=0.20.0" },
     { name = "pyvis", specifier = ">=0.3.2" },
     { name = "regex", specifier = ">=2025.11.3" },
+    { name = "rich", specifier = ">=14.2.0" },
     { name = "textual", specifier = ">=7.2.0" },
 ]
 
