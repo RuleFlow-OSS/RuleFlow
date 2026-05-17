@@ -30,7 +30,7 @@ class SpaceStateStringFormatter:
 
         # this holds pre-rendered Text objects for every character
         self._rich_mapping: dict[str, Text] = {}
-        self.cell_id_style: str = 'on black'
+        self.cell_id_style: str = 'on yellow'
 
         # initial build
         self.config()
