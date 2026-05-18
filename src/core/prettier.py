@@ -30,7 +30,7 @@ class SpaceStateStringFormatter:
 
         # this holds pre-rendered Text objects for every character
         self._rich_mapping: dict[str, Text] = {}
-        self.cell_id_style: str = 'on yellow'
+        self.highlighted_cell_style: str = 'on yellow'
 
         # initial build
         self.config()
@@ -71,14 +71,14 @@ class SpaceStateStringFormatter:
     def __call__(self, s: SpaceState, highlight_cells_with_id: frozenset[int] = frozenset()) -> Text:
         """Fast join using the pre-computed mapping. Also highlight specific cells matching highlight_cells_with_id."""
         rm = self._rich_mapping
-        cell_id_style = self.cell_id_style
+        highlighted_cell_style = self.highlighted_cell_style
         def iter_cells() -> Iterator[Text]:
             # noinspection PyUnresolvedReferences
             for c in s.cells:
                 cell = rm.get(str(c), Text(str(c), end=''))
                 if id(c) in highlight_cells_with_id:
                     cell = cell.copy()
-                    cell.stylize(cell_id_style)
+                    cell.stylize(highlighted_cell_style)
                 yield cell
         return Text(end='').join(iter_cells())
 

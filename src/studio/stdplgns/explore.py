@@ -216,7 +216,7 @@ class P(Plugin):
             self._handle_styling_update()
 
         elif _id == 'hover-style':
-            self.space_state_formatter.cell_id_style = e.value.strip()
+            self.space_state_formatter.highlighted_cell_style = e.value.strip()
 
     def handle_selection_toggle(self, e: SelectionList.SelectionToggled):
         _id: str = e.selection_list.id

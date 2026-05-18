@@ -9,6 +9,7 @@ dependencies = [
     "matplotlib>=3.10.8",
     "networkx>=3.6.1",
     "ollama>=0.6.1",
+    "platformdirs>=4.5.1",
     "psutil>=7.2.1",
     "pyrsistent>=0.20.0",
     "pyvis>=0.3.2",
