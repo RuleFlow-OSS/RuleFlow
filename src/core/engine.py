@@ -397,19 +397,11 @@ class Event:
                         yield r, space_delta, space
 
     def __str__(self):
-        return '[' + ', '.join(str(space) for space in self.spaces) + ']'  # TODO remove this to a dedication printer
+        return '[' + ', '.join(str(space) for space in self.spaces) + ']'  # TODO remove this to a dedicated printer
 
 
 class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
-
-    # Signals (can be used to live update analysis objects like the causal graph)
-    on_evolved_step: Signal[Self] = Signal()
-    on_evolved_n: Signal[Self, int] = Signal()  # after all evolves
-    on_undone_step: Signal[Self] = Signal()
-    on_undone_n: Signal[Self, int] = Signal()  # after all undo's
-    on_clear: Signal[Self] = Signal()
-    on_ruleset_set: Signal[Self] = Signal()
 
     def __init__(self):
         self.ruleset: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
@@ -418,10 +410,18 @@ class Flow:
         # progress tracking attributes
         self.n_step_progress: float = 0  # percentage of steps run by some_method_n().
 
+        # Signals (can be used to live update analysis objects like the causal graph)
+        self.on_evolved_step: Signal = Signal()
+        self.on_evolved_n: Signal[int] = Signal()  # after all evolves
+        self.on_undone_step: Signal = Signal()
+        self.on_undone_n: Signal[int] = Signal()  # after all undo's
+        self.on_clear: Signal = Signal()
+        self.on_ruleset_set: Signal = Signal()
+
     def set_ruleset(self, ruleset: RuleSet) -> None:
         """Used to set the rule set"""
         self.ruleset: RuleSet = ruleset
-        self.on_ruleset_set.emit(self)
+        self.on_ruleset_set.emit()
 
     def set_initial_space(self, initial_space: Sequence[SpaceState]) -> None:
         """Used to set the initial space"""
@@ -435,7 +435,7 @@ class Flow:
     def clear_evolution(self) -> None:
         """Clear the evolution."""
         del self.events[1:]
-        self.on_clear.emit(self)
+        self.on_clear.emit()
 
     @property
     def current_event(self) -> Event:
@@ -482,7 +482,7 @@ class Flow:
         self.current_event.causal_distance_to_creation = min_prev + 1
 
         # emit any signals
-        self.on_evolved_step.emit(self)
+        self.on_evolved_step.emit()
 
     def evolve(self, n_steps: int, break_when_inert: bool = False) -> None:
         """Evolve the system n steps."""
@@ -496,10 +496,10 @@ class Flow:
                 break
 
         # emit any signals
-        self.on_evolved_n.emit(self, n_steps)
+        self.on_evolved_n.emit(n_steps)
 
-    def _undo(self) -> None:
-        """undo the last event..."""
+    def _regress(self) -> None:
+        """Revert to the last event..."""
         if self.current_event_idx == 0:
             return
         for ar in self.current_event.space_deltas:
@@ -510,14 +510,14 @@ class Flow:
         self.events.pop()
 
         # emit any signals
-        self.on_undone_step.emit(self)
+        self.on_undone_step.emit()
 
-    def undo(self, n_steps: int) -> None:
+    def regress(self, n_steps: int) -> None:
         for _ in range(n_steps):
             self.n_step_progress = (_ + 1) / n_steps
-            self._undo()
+            self._regress()
 
-        self.on_undone_n.emit(self, n_steps)
+        self.on_undone_n.emit(n_steps)
 
     def __str__(self) -> str:
         return '\n'.join(str(e) for e in self.events)

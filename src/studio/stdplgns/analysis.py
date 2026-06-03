@@ -11,6 +11,7 @@ from textual.widgets.selection_list import Selection
 # Standard Imports
 from typing import Iterator
 from studio.model import Plugin
+from lang.interpreter import FlowLang
 from core.graph import EventCausalityGraph
 from core.numlib import str_to_num, INF
 from studio.config import USER_DATA_DIR_PATH
@@ -21,9 +22,14 @@ import math
 
 
 class P(Plugin):
-    def on_initialized(self) -> None:
-        self.name = 'analysis'
+    name = 'analysis'
+    file_types = ['.flow']
 
+    @property
+    def flow(self) -> FlowLang:
+        return self.model.data.setdefault('flow', FlowLang())
+
+    def on_initialized(self) -> None:
         # tools
         self._causal_graph: EventCausalityGraph | None = None
 
@@ -189,7 +195,7 @@ class P(Plugin):
         stem: str = stems[self.export_format.value]
         path: str = str(
             self.model.project_path.joinpath(
-                self.model.flow_path.name + f'_at_{self.causal_network_event_range.value.replace(':', '_')}' + stem
+                self.model.file_path.name + f'_at_{self.causal_network_event_range.value.replace(':', '_')}' + stem
             )
         )
         try:
@@ -239,7 +245,7 @@ class P(Plugin):
             str_to_num(rs[1]) if rs[1] else INF,
             abs(int(rs[2])) if rs[2] else 1
         )
-        self._causal_graph = EventCausalityGraph().build(self.model.flow, r, self.collapse_edges.value)
+        self._causal_graph = EventCausalityGraph().build(self.flow, r, self.collapse_edges.value)
         self._update_causal_metrics_table(self._causal_graph)
 
     def _update_causal_metrics_table(self, g: EventCausalityGraph) -> None:
@@ -294,13 +300,10 @@ class P(Plugin):
         causal_distance_data: list[int] = []
         connected_abs_distance_data: list[int] = []
         connected_set_distance_data: list[int] = []
-        for event in self.model.flow.events[a:b+(1 if b > 0 else 0):c]:
+        for event in self.flow.events[a:b+(1 if b > 0 else 0):c]:
             causal_distance_data.append(event.causal_distance_to_creation)
             connected_abs_distance_data.append(len(_:=tuple(event.causally_connected_events)))
             connected_set_distance_data.append(len(set(_)))
         self.distance_distribution.data = causal_distance_data
         self.connected_abs_distribution.data = connected_abs_distance_data
         self.connected_set_distribution.data = connected_set_distance_data
-
-
-plugin = P()

@@ -1,6 +1,5 @@
 """The model side of the MVC paradigm"""
-from typing import Iterator, TYPE_CHECKING, cast, Callable
-from lang import FlowLangBase, FlowLang  # in the implementation
+from typing import Iterator, TYPE_CHECKING, cast, Callable, Sequence, Any
 from abc import ABC, abstractmethod
 from textual.widgets import TabPane
 from textual.widget import Widget
@@ -14,42 +13,45 @@ import importlib
 
 # used for type checking
 if TYPE_CHECKING:
-    from studio.view import EditorScreen
+    from studio.view import EditorInstance as View
 else:
-    class EditorScreen(object): pass  # must define due to reference in type casting
+    class View(object): pass  # must define due to reference in type casting
 
 
 class Model:
     """
-    The source of truth for the application state (a Singleton Pattern).
-    Manages the current workspace and open file flows.
+    The source of truth for the application state (specific to each file, and thus editor instance).
     """
 
-    def __init__(self, name: str, project_path: Path, view: EditorScreen) -> None:
+    def __init__(self, project_name: str, project_path: Path, file_path: Path, view: View) -> None:
         """Name and project path are passed to initiate the model. The textual app is simply passed as a reference so
         that plugins maintain access to it."""
         # ======== Project Attributes ========
-        self.project_name: str = name  # name the user has given the project
+        self.project_name: str = project_name  # name the user has given the project
         self.project_path: Path = project_path
-        self.flow_path: Path | None = None
+        self.file_path: Path = file_path
         self._edit_hash: int = 0  # used to check if some text has already been saved...
-        self.flow: FlowLangBase = FlowLang()
-
-        # ======== View Hook (for access through model/plugin) ========
-        self.view: EditorScreen = view
+        self.data: dict[str, Any] = {}  # this is where model data can be stored (such as the Flow(s) instance)
 
         # ======== Plugins ========
         self.plugins: list[Plugin] = []
 
+        def grab_plugins(m):  # a function to grab
+            for _, obj in inspect.getmembers(m, inspect.isclass):
+                if issubclass(obj, Plugin) and obj is not Plugin and not inspect.isabstract(obj):
+                    file_type: str = self.file_path.suffix
+                    if hasattr(obj, 'exclude_file_types') and file_type in obj.file_types:
+                        continue
+                    if hasattr(obj, 'file_types') and file_type not in obj.file_types:
+                        continue
+                    self.plugins.append(obj(self, view))
+
         # add builtin plugins
         from studio.stdplgns import run, explore, analysis
         for module in (run, explore, analysis):
-            for _, obj in inspect.getmembers(module):
-                if isinstance(obj, Plugin):
-                    obj._model = self
-                    obj._view = self.view
-                    self.plugins.append(obj)
-        # load all plugins
+            grab_plugins(module)
+
+        # load all plugins classes
         for pp in (self.project_path / "plugins").glob("*.py"):
             module_name = f"plugins.{pp.stem}"  # make it appear as if it lives in a package called plugins.
             # Dynamically import module
@@ -57,40 +59,36 @@ class Model:
             module = importlib.util.module_from_spec(spec)  # allocates module object
             sys.modules[module_name] = module  # makes it importable and unique
             spec.loader.exec_module(module)  # populates module with code and objects
-            # Look for instances of Plugin inside the module
-            for _, obj in inspect.getmembers(module):
-                if isinstance(obj, Plugin):
-                    obj._model = self
-                    obj._view = self.view
-                    self.plugins.append(obj)
+            grab_plugins(module)
 
-        # ======== Initialize any children models (plugins) ========
+        # ======== Initialize the controllers (plugins) ========
         for p in self.plugins:
             p.on_initialized()
 
     def write_file(self, text: str) -> bool:
         """Writes to the file and returns True if the file was written to."""
-        if self.flow_path and self._edit_hash != (eh:=hash(text)):
-            self.flow_path.write_text(text)
+        if self.file_path and self._edit_hash != (eh:=hash(text)):
+            self.file_path.write_text(text)
             self._edit_hash = eh
             return True
         return False
 
     def read_file(self) -> str | None:
-        if self.flow_path:
-            self._edit_hash = hash(text:=self.flow_path.read_text())
+        """Read in the contents of a file."""
+        if self.file_path:
+            self._edit_hash = hash(text:=self.file_path.read_text())
             return text
         return None
 
-    def open_file(self, path: Path | None):
-        self.flow_path = path
+    def is_dirty(self, text: str):
+        return self._edit_hash != hash(text)
 
 
 # ================ Plugin Support ================
 class Plugin(ABC):
     """
     Any class that inherits from this, becomes a plugin and is expected to implement the methods below.
-    Only one instance of this class is expected for each plugin PER APP.
+    Only one instance of this class is expected for each plugin PER FLOW.
     If session/flow-instance-specific behavior is desired, the session change signal must be watched and handled.
 
     IMPORTANT NOTE: The view call self.panel() and then self.control() in that order. Thus, calls may need to be placed
@@ -98,22 +96,24 @@ class Plugin(ABC):
 
     Required attributes:
     - name: str  # the name of the plugin
+    - file_types: list[str]  # the list of files that are supported.
     - model: Model  # gives the plugin access to the model
-    - view: EditorScreen  # gives the plugin access to the app
+    - view: View  # gives the plugin access to the app
     """
+    name: str = cast(str, cast(object, None))
+    file_types: Sequence[str] = []
 
-    def __init__(self) -> None:
+    def __init__(self, model: Model, view: View) -> None:
         # Define the unset required attributes
-        self.name: str = cast(str, cast(object, None))
-        self._model: Model = cast(Model, cast(object, None))
-        self._view: EditorScreen = cast(EditorScreen, cast(object, None))
+        self._model: Model = model
+        self._view: View = view
 
     @property
     def model(self) -> Model:
         return self._model
 
     @property
-    def view(self) -> EditorScreen:
+    def view(self) -> View:
         return self._view
 
     @property

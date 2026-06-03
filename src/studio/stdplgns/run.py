@@ -6,6 +6,7 @@ from textual.widgets import Collapsible, TabPane, Input, Checkbox, Button, Progr
 from textual.widget import Widget
 from textual.containers import ScrollableContainer, Horizontal
 from textual.timer import Timer
+from textual.worker import Worker
 
 # Standard Imports
 from typing import Iterator
@@ -14,15 +15,19 @@ import psutil
 import os
 import sys
 from rich.traceback import Traceback as RichTraceback
-from textual.worker import Worker
-
-from studio.model import Plugin, FlowLangBase
+from studio.model import Plugin
+from lang.interpreter import FlowLang
 
 
 class P(Plugin):
-    def on_initialized(self) -> None:
-        self.name = 'run'
+    name = 'run'
+    file_types = ['.flow']
 
+    @property
+    def flow(self) -> FlowLang:
+        return self.model.data.setdefault('flow', FlowLang())
+
+    def on_initialized(self) -> None:
         # Connect buttons to our execution logic
         self.view.sig_button_pressed.connect(
             self.handle_btn_press
@@ -32,8 +37,8 @@ class P(Plugin):
         )
 
         # Connect flow signals to update progress bar
-        FlowLangBase.on_evolved_step.connect(self._handle_progress_updates)
-        FlowLangBase.on_undone_step.connect(self._handle_progress_updates)
+        self.flow.on_evolved_step.connect(self._handle_progress_updates)
+        self.flow.on_undone_step.connect(self._handle_progress_updates)
 
         # Attributes
         self._process = psutil.Process(os.getpid())
@@ -42,6 +47,16 @@ class P(Plugin):
         self._running_thread: Worker | None = None  # for checking and managing the current thread
 
     def controls(self) -> Iterator[Widget]:
+        toolbar_btn = (
+            Button("Run", id="toolbar-btn-run", classes="toolbar-btn green", compact=True),
+            Label("| ", classes="gray"),
+            Button("Regress", id="toolbar-btn-regress", classes="toolbar-btn orange", compact=True),
+            Label("| ", classes="gray"),
+            Button("Clear", id="toolbar-btn-clear", classes="toolbar-btn red", compact=True)
+        )
+        for btn in toolbar_btn:
+            self.view.workspace_toolbar.compose_add_child(btn)
+
         # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
         self.undo_steps = Input(type='integer', value='1')
         self.undo_steps.border_title = 'Undo Button Steps'
@@ -93,12 +108,13 @@ class P(Plugin):
 
     def handle_btn_press(self, e: Button.Pressed):
         btn: str = e.button.id
-        if btn == 'btn-run':
+        if btn == 'toolbar-btn-run':
             self.execute_run()
-        elif btn == 'btn-undo':
+        elif btn == 'toolbar-btn-regress':
             self.execute_undo()
-        elif btn == 'btn-clear':
-            self.model.flow.clear_evolution()
+        elif btn == 'toolbar-btn-clear':
+            self.flow.clear_evolution()
+
         elif btn == 'clear-log':
             self.log_view.clear()
             self.log_view.write(f"[bold green] --- Log Cleared --- [/bold green]")
@@ -125,10 +141,10 @@ class P(Plugin):
             self._prev_flowlang_src = self.view.code_editor_text_area.text
             self.execute_run()
 
-    def _handle_progress_updates(self, f: FlowLangBase) -> None:
+    def _handle_progress_updates(self) -> None:
         self.cft(  # we must call from the main thread to be thread-safe according to docs
             self.progress_bar.update,
-            progress=f.n_step_progress * 100
+            progress=self.flow.n_step_progress * 100
         )
         # import time  # to test slowdowns
         # time.sleep(0.5)
@@ -141,7 +157,7 @@ class P(Plugin):
 
         # execute the FlowLang
         try:
-            self.model.flow.interpret(self.view.code_editor_text_area.text)
+            self.flow.interpret(self.view.code_editor_text_area.text)
         except Exception as e:
             # Handle the exception
             if self.show_traceback.value:
@@ -171,7 +187,7 @@ class P(Plugin):
 
     def execute_run(self) -> None:
         """Handles the flow execution and updates the UI components."""
-        flow_path = self.model.flow_path
+        flow_path = self.model.file_path
         if not flow_path:
             self.log_view.write("[bold red]Studio Error:[/bold red] No flow selected to run.")
             return
@@ -187,7 +203,7 @@ class P(Plugin):
 
     def execute_undo(self) -> None:
         """Handles the flow undo and updates the UI components."""
-        flow_path = self.model.flow_path
+        flow_path = self.model.file_path
         if not flow_path:
             self.log_view.write("[bold red]Studio Error:[/bold red] No flow selected to undo.")
             return
@@ -197,11 +213,9 @@ class P(Plugin):
         try:
             steps: int = int(self.undo_steps.value)
             self._running_thread = self.view.run_worker(
-                lambda: self.model.flow.undo(steps),
+                lambda: self.flow.regress(steps),
                 thread=True
             )
             self.log_view.write(f'[bold green]Undo last {steps} steps...[/bold green]')
         except:
             self.log_view.write("[bold red]Studio Error:[/bold red] Could not execute undo command.")
-
-plugin = P()

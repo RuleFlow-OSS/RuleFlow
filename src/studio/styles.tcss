@@ -1,19 +1,4 @@
 /* =========================================
-   GLOBAL RESET & THEME
-   ========================================= */
-* {
-    box-sizing: border-box;
-}
-
-Screen {
-    background: #1e1e1e;
-    color: #e0e0e0;
-    layers: base overlay;
-    transition: screen-blur 300ms;
-}
-
-
-/* =========================================
    Input Modal
    ========================================= */
 
@@ -40,7 +25,6 @@ ModalDialog {
     width: 100%;
     content-align: center middle;
     text-style: bold;
-    color: #ffffff;
     margin-bottom: 1;
 }
 
@@ -129,22 +113,37 @@ WelcomeScreen {
    ========================================= */
 
 EditorScreen {
-        width: 100%;
-        height: 100%;
-        layout: horizontal;
-        overflow: hidden hidden;
+    width: 100%;
+    height: 100%;
+    layout: horizontal;
+    overflow: hidden hidden;
 }
 
-/* --- LEFT SIDEBAR --- */
+EditorInstance {
+    layout: horizontal;
+    overflow: hidden hidden;
+}
+
+#editor-instance-switcher {
+    width: 3fr;  /* shares space with #project-directory */
+    height: 100%;
+    min-width: 60;
+    align: center middle;  /* to center the label */
+}
+
+#loading-label {
+    text-style: bold;
+}
+
+/* --- LEFT SIDEBAR (Project Directory) --- */
 #project-directory {
     width: 1fr;
     height: 100%;
     border-right: solid #2b2b2b;
-    background: #181818;
     min-width: 25;
 }
 
-/* --- MIDDLE WORKSPACE --- */
+/* --- EDITOR WORKSPACE --- */
 #workspace {
     width: 2fr;
     height: 100%;
@@ -169,11 +168,9 @@ EditorScreen {
     height: 1fr;
 }
 
-/* --- RIGHT MENU --- */
 #plugin-controls {
-    width: 1fr;
+    width: 1fr;  /* shares space with #workspace */
     height: 100%;
-    background: #181818;
     border-left: solid #2b2b2b;
     min-width: 30;
 }
@@ -185,9 +182,8 @@ EditorScreen {
 
 Input {
     width: 1fr;
-    background: rgba(0, 0, 0, 0);
+    background: #00000000;
     border: round #7a7a7a;
-    color: #e0e0e0;
 }
 
 Input:focus {
@@ -214,23 +210,13 @@ Collapsible {
 
 .pane-header {
     width: 1fr;
-    background: #252526;
+    background: rgba(128,128,128, 0.3);
     text-style: bold;
     padding-left: 1;
 }
 
-.separator {
-    padding: 0 1;
-    color: #555555;
-}
-
-.action-btn {
+.toolbar-btn {
     min-width: 8;
-}
-
-.increment-btn {
-    min-width: 1;
-    background: #252526;
 }
 
 /* ---- Colors ---- */

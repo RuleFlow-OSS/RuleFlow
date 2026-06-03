@@ -19,7 +19,8 @@ from core.engine import Event as FlowEvent, SpaceState, Cell as FlowCell, DeltaC
 from core.prettier import SpaceStateStringFormatter
 from core.signals import Signal
 from lang.implementation import BaseRule
-from studio.model import Plugin, FlowLangBase
+from studio.model import Plugin
+from lang.interpreter import FlowLang
 
 
 class DataTable(_DataTable):
@@ -75,9 +76,14 @@ class RulesetDashboard(VerticalScroll):
 
 
 class P(Plugin):
-    def on_initialized(self) -> None:
-        self.name = 'explore'
+    name = 'explore'
+    file_types = ['.flow']
 
+    @property
+    def flow(self) -> FlowLang:
+        return self.model.data.setdefault('flow', FlowLang())
+
+    def on_initialized(self) -> None:
         # tools
         self.space_state_formatter: SpaceStateStringFormatter = SpaceStateStringFormatter()
         self._cell_ids_to_highlight: frozenset[int] = frozenset()
@@ -89,11 +95,11 @@ class P(Plugin):
         self._columns_control_bitmap: list[bool] = [True, False, False, False, False, False]
 
         # connect model signals
-        self.model.flow.on_evolved_n.connect(self.on_evolved)
-        self.model.flow.on_undone_n.connect(self.on_undo)
-        self.model.flow.on_clear.connect(self.on_clear)
-        self.model.flow.on_ruleset_set.connect(
-            lambda f: self.cft(self._rebuild_ruleset_table, f.ruleset.rules, self.ruleset_table)
+        self.flow.on_evolved_n.connect(self.on_evolved)
+        self.flow.on_undone_n.connect(self.on_undo)
+        self.flow.on_clear.connect(self.on_clear)
+        self.flow.on_ruleset_set.connect(
+            lambda: self.cft(self._rebuild_ruleset_table, self.flow.ruleset.rules, self.ruleset_table)
         )
 
         # connect view signals
@@ -303,7 +309,7 @@ class P(Plugin):
         )
 
         # noinspection PyTypeChecker
-        self._rebuild_ruleset_table(self.model.flow.ruleset.rules, self.ruleset_table)
+        self._rebuild_ruleset_table(self.flow.ruleset.rules, self.ruleset_table)
         self._rebuild_rows()
 
     def _reset_hovered_info_label(self):
@@ -354,7 +360,7 @@ class P(Plugin):
         column_idx: int = int(cell_key.column_key.value)
 
         # grab all relevant information about the selected space
-        flow: FlowLangBase = self.model.flow
+        flow: FlowLang = self.flow
         event: FlowEvent = flow.events[row_idx]
         spaces: tuple[tuple[DeltaSpaces, DeltaSpace, SpaceState], ...] = tuple(event.spaces_with_metadata)
         space_state: SpaceState = spaces[column_idx][2]
@@ -441,7 +447,7 @@ class P(Plugin):
         if remember_old_row_length and old_rows:
             for _ in range(old_rows): table.add_row()
 
-    def on_evolved(self, f: FlowLangBase, steps: int) -> None:
+    def on_evolved(self, steps: int) -> None:
         cft = self.cft
         dt = self.data_table
         if not dt.row_count:
@@ -452,7 +458,7 @@ class P(Plugin):
             cft(self._rebuild_rows)
         else:
             short_circuit: bool = False  # just a little optimization for large loops
-            for event in f.events[-steps:]:
+            for event in self.flow.events[-steps:]:
                 if short_circuit or flush_mode and dt.row_count >= render_limit:
                     short_circuit = True
                     cft(lambda: dt.remove_row(dt.coordinate_to_cell_key(Coordinate(0, 0)).row_key))
@@ -461,11 +467,11 @@ class P(Plugin):
         if not flush_mode:
             dt.scroll_end(animate=False)
 
-    def on_undo(self, f: FlowLangBase, steps: int) -> None:
+    def on_undo(self, steps: int) -> None:
         # NOTE: this function is not very optimized for updates, but premature optimization is the root of all evil.
         cft = self.cft
         dt = self.data_table
-        old_rows_count = len(f.events) + steps
+        old_rows_count = len(self.flow.events) + steps
         for i in range(steps):
             try: cft(dt.remove_row, str(old_rows_count - i - 1))
             except: pass
@@ -525,7 +531,7 @@ class P(Plugin):
         dt = self.data_table
         old_x, old_y = dt.scroll_x, dt.scroll_y
         dt.clear()
-        for event in self.model.flow.events[a:b + (1 if b > 0 else 0):c]:
+        for event in self.flow.events[a:b + (1 if b > 0 else 0):c]:
             self._add_row(event)
         self._refresh_column_widths()
         dt.scroll_to(x=old_x, y=old_y, animate=False)
@@ -557,5 +563,3 @@ class P(Plugin):
             dt._update_column_widths(
                 {dt.coordinate_to_cell_key(Coordinate(rc, i)) for i in range(len(dt.columns))}
             )
-
-plugin = P()

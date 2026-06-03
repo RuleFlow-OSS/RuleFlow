@@ -15,6 +15,7 @@ from textual.containers import VerticalScroll, HorizontalGroup
 from typing import Iterator
 import threading
 from studio.model import Plugin
+from lang.interpreter import FlowLang
 
 # Attempt to import SCAMP. If it fails, we flag it so the UI can warn the user.
 try:
@@ -44,9 +45,14 @@ def get_extended_scale(scale_intervals: list[int], octaves: int = 5, base_midi: 
 
 
 class P(Plugin):
-    def on_initialized(self) -> None:
-        self.name = 'tunes'
+    name = 'Tunes'
+    file_types = ['.flow']
 
+    @property
+    def flow(self) -> FlowLang:
+        return self.model.data.setdefault('flow', FlowLang())
+
+    def on_initialized(self) -> None:
         # Internal State
         self._is_playing: bool = False
         self._playback_thread: threading.Thread | None = None
@@ -164,7 +170,7 @@ class P(Plugin):
             self.view.notify("Music is already playing.", severity="warning")
             return
 
-        if not self.model.flow.events:
+        if not self.flow.events:
             self.log_view.write("[bold red]No simulation events found. Run the engine first.[/bold red]")
             return
 
@@ -288,7 +294,7 @@ class P(Plugin):
 
             self.cft(self.log_view.write, f"[bold green]Playing {scale_name}...[/bold green]")
 
-            for event in self.model.flow.events:
+            for event in self.flow.events:
                 if self._stop_event.is_set():
                     break
 
@@ -360,7 +366,7 @@ class P(Plugin):
                 performance = session.stop_transcribing()
 
                 export_fmt = self.export_format.value
-                export_path = self.model.project_path / f"cellular_score_{self.model.flow_path.stem}.{export_fmt}"
+                export_path = self.model.project_path / f"cellular_score_{self.model.file_path.stem}.{export_fmt}"
 
                 try:
                     if export_fmt == 'xml':
@@ -388,6 +394,3 @@ class P(Plugin):
 
             self.cft(self.log_view.write, "\n[bold yellow]Playback concluded.[/bold yellow]")
             self._is_playing = False
-
-
-plugin = P()

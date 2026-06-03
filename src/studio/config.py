@@ -8,7 +8,7 @@ VERSION: str = "v0.1.0"
 BREAKING_VERSION: str = "v0.1.0"  # determines if a new config folder is needed
 USER_DATA_DIR_PATH: Path = _user_data_path(APPNAME, None, BREAKING_VERSION, ensure_exists=True)
 PROJECTS_LIST_PATH: Path = USER_DATA_DIR_PATH.joinpath('projects.json')
-SUPPORTED_FILE_TYPES: list[str] = ["*.flow", "*.md", "*.py"]
+SUPPORTED_FILE_TYPES: list[str] = ["*.flow", "*.md", "*.py"]  # TODO: deprecate
 
 
 class __RecentProjects:

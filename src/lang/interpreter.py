@@ -134,8 +134,8 @@ class FlowLangBase(Flow):
         """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
         raise NotImplementedError()
 
-    def undo(self, n_steps: int) -> None:
-        super().undo(n_steps)
+    def regress(self, n_steps: int) -> None:
+        super().regress(n_steps)
         for space in self.current_event.spaces:  # we must remember to refresh the search buffer if undoing anything...
             # noinspection PyUnresolvedReferences
             space.cells.refresh_search_buffer()
@@ -184,7 +184,7 @@ class FlowLang(FlowLangBase):
         # after instantiation
         interpret_directives({
             'evolve': self.evolve,
-            'undo': self.undo,
+            'undo': self.regress,
             'clear': self.clear_evolution,
             'merge': self.__merge_group,
             'compress': self.__compress_group
