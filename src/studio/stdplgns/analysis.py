@@ -39,7 +39,7 @@ class P(Plugin):
     def controls(self) -> Iterator[Widget]:
         with Collapsible(title='Causal Network', collapsed=False):
             yield Button('Build Graph', id='build-graph', variant="primary")
-            self.causal_network_event_range = Input(':32')
+            self.causal_network_event_range = Input(':64')
             self.causal_network_event_range.border_title = 'Event Range'
             yield self.causal_network_event_range
             self.collapse_edges = Checkbox('Collapse Edges')

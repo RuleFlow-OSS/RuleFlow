@@ -14,13 +14,13 @@ from pathlib import Path
 from typing import cast, Iterable
 from textual.css.query import NoMatches
 from textual.app import App, ComposeResult
-from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer
+from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer, HorizontalGroup
 from textual.screen import Screen, ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
     DirectoryTree as _DirectoryTree, TextArea as _TextArea, Button, Label,
     Select, TabbedContent, OptionList, Input, SelectionList,
-    Footer, ContentSwitcher, Static, Checkbox
+    Footer, ContentSwitcher, Static, Checkbox, Rule
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on
@@ -50,7 +50,7 @@ class DirectoryTree(_DirectoryTree):
         for path in paths:
             if str(path.stem) == 'plugins' or str(path).endswith("__") or str(path).startswith("__"):
                 continue
-            if path.is_dir() or any(map(path.match, config.SUPPORTED_FILE_TYPES)):
+            if path.is_dir() or not any(map(path.match, config.HIDDEN_FILE_PATTERNS)):
                 yield path
 
 
@@ -237,10 +237,10 @@ class EditorInstance(Widget):
     BINDINGS = [  # NOTE: hide by adding `, show=False` to a binding
         ("ctrl+s", "save_file", "Save File"),
         ("ctrl+r", "run", "Run"),
-        ("ctrl+f2", "toggle_right_sidebar", "Toggle Right"),
-        ("shift+f1", "toggle_code_editor", "Toggle Code"),
-        ("shift+f2", "toggle_bottom_panel", "Toggle Panel"),
         ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
+        ("shift+f1", "toggle_code_editor", "Toggle Code"),
+        ("shift+f2", "toggle_panel", "Toggle Panel"),
+        ("ctrl+f2", "toggle_controls", "Toggle Controls"),
     ]
 
     # noinspection PyUnresolvedReferences
@@ -256,11 +256,11 @@ class EditorInstance(Widget):
         self.open_file_label.update(f"{m.file_path.name}")
         # self.notify(f"Saved the \"{m.file_path.name}\" file.")
 
-    def action_toggle_right_sidebar(self):
+    def action_toggle_controls(self):
         menu = self.query_one("#plugin-controls")
         menu.display = not menu.display
 
-    def action_toggle_bottom_panel(self):
+    def action_toggle_panel(self):
         panel = self.query_one("#plugin-panel")
         panel.display = not panel.display
 
@@ -317,14 +317,19 @@ class EditorInstance(Widget):
 
     # ==== Composition ====
     def compose(self) -> ComposeResult:
+        self.can_focus = True  # so that if all widgets are hidden, the actions (and bindings) can still toggle.
+
         # --- MIDDLE COLUMN: Workspace Panel & Editor---
         with Vertical(id="workspace"):
             # Top Toolbar
             with Horizontal(id='workspace-toolbar') as wt:
+                self.workspace_toolbar: Horizontal = wt  # this way plugins can add buttons or widgets here
                 self.open_file_label = Label(self.MODEL.file_path.name, classes='gray')
                 yield self.open_file_label
+                # noinspection PyUnresolvedReferences
+                if (_:=self.screen.selected_variant) != 'main':
+                    yield Label(f' | {_}', classes='gray')
                 yield Spacer()
-                self.workspace_toolbar: Horizontal = wt  # this way plugins can add buttons or widgets here
 
             # Code Editor
             self.code_editor_text_area: TextArea = TextArea.code_editor(
@@ -373,8 +378,11 @@ class EditorScreen(Screen):
     """
     BINDINGS = [  # NOTE: hide by adding `, show=False` to a binding
         ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
-        ("ctrl+f1", "toggle_left_sidebar", "Toggle Left")
+        ("ctrl+f1", "toggle_project_dir", "Toggle Files")
     ]
+    selected_file: DirectoryTree.FileSelected = None
+    selected_variant: str = 'main'
+    variants: list[str] = []
 
     def action_toggle_max(self):
         if not self.focused:  # if nothing is focused
@@ -384,7 +392,7 @@ class EditorScreen(Screen):
         else:
             self.maximize(self.focused)
 
-    def action_toggle_left_sidebar(self):
+    def action_toggle_project_dir(self):
         sidebar = self.query_one("#project-directory")
         sidebar.display = not sidebar.display
 
@@ -392,7 +400,11 @@ class EditorScreen(Screen):
         # --- Project Files Panel ---
         with Vertical(id="project-directory"):
             yield Label(f"⭘ {self.app.project_name}", id="project-title-label", classes="pane-header")
-
+            with HorizontalGroup():
+                yield Label(f" Variant: ", markup=False)
+                yield Select((), prompt=self.selected_variant, compact=True, id="variant-selector")
+                yield Button('+', compact=True, classes='green small-btn', id="btn-add-variant")
+                yield Button('-', compact=True, classes='red small-btn', id="btn-remove-variant")
             yield DirectoryTree(self.app.project_path, id="project-dir-tree")
             yield Button('↻  Refresh Directory', id='btn_refresh_project_dir', classes='full-width gray')
 
@@ -408,7 +420,6 @@ class EditorScreen(Screen):
         # --- Footer ---
         yield Footer()
 
-    # noinspection PyUnresolvedReferences
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected):
         path: Path = event.path
         if not path.exists():
@@ -416,7 +427,7 @@ class EditorScreen(Screen):
             self.query_one(DirectoryTree).reload()
             return
         safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', path.name)
-        instance_id = f"editor_{safe_name}"
+        instance_id = f"editor_{self.selected_variant}_{safe_name}"  # must start with something like "editor" to avoid invalid chars for id
         if self.editor_instance_switcher.query(f"#{instance_id}"):
             self.editor_instance_switcher.current = instance_id
         else:
@@ -426,7 +437,90 @@ class EditorScreen(Screen):
                 new_editor = EditorInstance(id=instance_id, file_path=path)
                 self.editor_instance_switcher.mount(new_editor)
                 self.editor_instance_switcher.current = instance_id
+                if not new_editor.MODEL.plugins:
+                    new_editor.action_toggle_controls()
+                    new_editor.action_toggle_panel()
             self.set_timer(0.1, _load_editor_instance)
+        self.selected_file = event
+
+    @on(Button.Pressed, '#btn-add-variant')
+    def btn_add_variant(self):
+
+        def handle_modal_result(result: dict) -> None:
+            if result["pressed_button"] == "Cancel":
+                return
+            variant_name: str = result["input"]["variant_name"]
+            if not variant_name:
+                self.notify("A new variant must be given a name!", severity="error")
+                return
+            if variant_name in self.variants:
+                self.notify("A variant with that name already exists!", severity="error")
+                return
+            self.variants.append(variant_name)
+            self.__refresh_variant_selector__()
+            self.notify(f"Created the \"{variant_name}\" variant...")
+
+        # Push the screen with the configuration and callback
+        self.app.push_screen(
+            ModalDialog(
+                title="Create Variant",
+                fields=[
+                    {
+                        "type": "note",
+                        "text": "Project variants are a temporary (per-session) way to open multiple versions of the same file(s), enabling parallel editing and exploration."
+                    },
+                    {
+                        "type": "input",
+                        "prompt": "Variant Name",
+                        "placeholder": "e.g. version 2",
+                        "id": "variant_name"
+                    }
+                ],
+                buttons=["Create", "Cancel"]
+            ),
+            callback=handle_modal_result
+        )
+
+    @on(Button.Pressed, '#btn-remove-variant')
+    def btn_remove_variant(self):
+        if self.selected_variant == 'main':
+            self.notify("The main variant cannot be removed!", severity="error")
+            return
+
+        def handle_modal_result(result: dict):
+            if result.get("pressed_button") == "Continue":
+                self.notify(f"Deleted the \"{self.selected_variant}\" variant...")
+                self.variants.remove(self.selected_variant)
+                self.__refresh_variant_selector__()
+
+        self.app.push_screen(
+            ModalDialog(
+                title="Remove Variant?",
+                fields=[
+                    {
+                        "type": "note",
+                        "text": "Please confirm variant removal..."
+                    }
+                ],
+                buttons=["Continue", "Cancel"]
+            ),
+            callback=handle_modal_result
+        )
+
+    def __refresh_variant_selector__(self) -> None:
+        """Helper to refresh the variant selector."""
+        ol: Select = self.query_one("#variant-selector")
+        ol.set_options([(f, i) for i, f in enumerate(self.variants)])
+        self.selected_variant = 'main'
+
+    @on(Select.Changed, '#variant-selector')
+    def select_variant(self, event: Select.Changed):
+        if isinstance(event.value, int):
+            self.selected_variant = self.variants[event.value]
+        else:
+            self.selected_variant = 'main'
+        if self.selected_file:
+            self.post_message(self.selected_file)
 
     @on(Button.Pressed, '#btn_refresh_project_dir')
     def btn_refresh_project_dir(self):
@@ -449,6 +543,7 @@ class Main(App):
             self.project_name = result["project_name"]
             self.project_path = result["project_path"]
             self.push_screen("editor")
+            self.theme = 'rose-pine'
         self.push_screen("welcome", callback=on_project_opened)
 
     def action_quit(self):

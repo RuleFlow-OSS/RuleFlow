@@ -1,3 +1,7 @@
+/*Screen {*/
+/*    background: $surface;*/
+/*}*/
+
 /* =========================================
    Input Modal
    ========================================= */
@@ -215,12 +219,17 @@ Collapsible {
     padding-left: 1;
 }
 
-.toolbar-btn {
-    min-width: 8;
+.small-btn {
+    min-width: 3;
+    background: #00000000;
+}
+
+.small-btn:hover {
+    background: rgba(128,128,128, 0.3);
 }
 
 /* ---- Colors ---- */
-.gray {color: gray;}
+.gray { color: gray; }
 .green { color: #87d787; }
 .orange { color: #d7af87; }
-.red   { color: #d78787; }
+.red { color: #d78787; }

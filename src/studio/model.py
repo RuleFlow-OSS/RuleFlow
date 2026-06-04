@@ -36,7 +36,7 @@ class Model:
         # ======== Plugins ========
         self.plugins: list[Plugin] = []
 
-        def grab_plugins(m):  # a function to grab
+        def grab_plugins(m):  # a function to grab Plugin subclasses from modules
             for _, obj in inspect.getmembers(m, inspect.isclass):
                 if issubclass(obj, Plugin) and obj is not Plugin and not inspect.isabstract(obj):
                     file_type: str = self.file_path.suffix

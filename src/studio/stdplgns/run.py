@@ -48,19 +48,17 @@ class P(Plugin):
 
     def controls(self) -> Iterator[Widget]:
         toolbar_btn = (
-            Button("Run", id="toolbar-btn-run", classes="toolbar-btn green", compact=True),
-            Label("| ", classes="gray"),
-            Button("Regress", id="toolbar-btn-regress", classes="toolbar-btn orange", compact=True),
-            Label("| ", classes="gray"),
-            Button("Clear", id="toolbar-btn-clear", classes="toolbar-btn red", compact=True)
+            Button("▶", tooltip="Run", classes="small-btn green", id="toolbar-btn-run", compact=True),
+            Button("⤆", tooltip="Regress", classes="small-btn orange", id="toolbar-btn-regress", compact=True),
+            Button("⎚", tooltip="Clear", classes="small-btn red", id="toolbar-btn-clear", compact=True)
         )
         for btn in toolbar_btn:
             self.view.workspace_toolbar.compose_add_child(btn)
 
         # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
-        self.undo_steps = Input(type='integer', value='1')
-        self.undo_steps.border_title = 'Undo Button Steps'
-        yield self.undo_steps
+        self.regress_steps = Input(type='integer', value='1')
+        self.regress_steps.border_title = 'Regress Steps'
+        yield self.regress_steps
         with Collapsible(title='Hot Reload', collapsed=False):
             self.hot_mode = Checkbox('Enable hot reload mode', id='hot-reload')
             yield self.hot_mode
@@ -174,9 +172,7 @@ class P(Plugin):
         # show profiler info
         if self.mem_profile.value:
             mem_end = self._process.memory_info().rss / 1024 / 1024
-            # noinspection PyUnboundLocalVariable
             elapsed_time = time.perf_counter() - start_time
-            # noinspection PyUnboundLocalVariable
             mem_diff = mem_end - mem_start
             self.cft(
                 self.log_view.write,
@@ -211,7 +207,7 @@ class P(Plugin):
             self.log_view.write("[bold red]Studio Error:[/bold red] A flow thread is currently running.")
             return
         try:
-            steps: int = int(self.undo_steps.value)
+            steps: int = int(self.regress_steps.value)
             self._running_thread = self.view.run_worker(
                 lambda: self.flow.regress(steps),
                 thread=True
