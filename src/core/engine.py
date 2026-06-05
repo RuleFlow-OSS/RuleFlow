@@ -418,6 +418,9 @@ class Flow:
         self.on_clear: Signal = Signal()
         self.on_ruleset_set: Signal = Signal()
 
+        # hidden properties
+        self._dirty_thread: bool = False  # used safely to interrupt a method running inside a thread.
+
     def set_ruleset(self, ruleset: RuleSet) -> None:
         """Used to set the rule set"""
         self.ruleset: RuleSet = ruleset
@@ -487,12 +490,15 @@ class Flow:
     def evolve(self, n_steps: int, break_when_inert: bool = False) -> None:
         """Evolve the system n steps."""
         i: int = 0
+        self._dirty_thread = False  # must reset
         while i < n_steps:
             # print(str(next(self.current_event.spaces).cells.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
             self.n_step_progress = (i + 1) / n_steps
             i += 1
             self._evolve()
             if break_when_inert and self.current_event.inert:
+                break
+            if self._dirty_thread:
                 break
 
         # emit any signals
@@ -513,11 +519,18 @@ class Flow:
         self.on_undone_step.emit()
 
     def regress(self, n_steps: int) -> None:
+        self._dirty_thread = False  # must reset
         for _ in range(n_steps):
             self.n_step_progress = (_ + 1) / n_steps
             self._regress()
+            if self._dirty_thread:
+                break
 
         self.on_undone_n.emit(n_steps)
+
+    def stop_thread(self):
+        """Used to safely interrupt any long-running methods in a thread."""
+        self._dirty_thread = True
 
     def __str__(self) -> str:
         return '\n'.join(str(e) for e in self.events)

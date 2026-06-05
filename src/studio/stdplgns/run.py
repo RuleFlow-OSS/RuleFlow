@@ -44,20 +44,24 @@ class P(Plugin):
         self._process = psutil.Process(os.getpid())
         self._prev_flowlang_src: str = ''  # for diff checking
         self._hot_after_n_changes: int = 0  # for fast reference
-        self._running_thread: Worker | None = None  # for checking and managing the current thread
+        self._worker: Worker | None = None  # for checking and managing the current thread
 
     def controls(self) -> Iterator[Widget]:
         toolbar_btn = (
-            Button("▶", tooltip="Run", classes="small-btn green", id="toolbar-btn-run", compact=True),
+            pb:=Button("▶", tooltip="Execute", classes="small-btn green", id="toolbar-btn-run", compact=True),
+            sb:=Button("■", tooltip="Stop", classes="small-btn red", id="toolbar-btn-stop", compact=True),
             Button("⤆", tooltip="Regress", classes="small-btn orange", id="toolbar-btn-regress", compact=True),
             Button("⎚", tooltip="Clear", classes="small-btn red", id="toolbar-btn-clear", compact=True)
         )
+        sb.display = False
+        self.play_button: Button = pb
+        self.stop_button: Button = sb
         for btn in toolbar_btn:
             self.view.workspace_toolbar.compose_add_child(btn)
 
         # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
         self.regress_steps = Input(type='integer', value='1')
-        self.regress_steps.border_title = 'Regress Steps'
+        self.regress_steps.border_title = 'Regression Steps'
         yield self.regress_steps
         with Collapsible(title='Hot Reload', collapsed=False):
             self.hot_mode = Checkbox('Enable hot reload mode', id='hot-reload')
@@ -107,15 +111,19 @@ class P(Plugin):
     def handle_btn_press(self, e: Button.Pressed):
         btn: str = e.button.id
         if btn == 'toolbar-btn-run':
-            self.execute_run()
+            self.execute_flow()
+        elif btn == 'toolbar-btn-stop':
+            self.execute_stop()
         elif btn == 'toolbar-btn-regress':
-            self.execute_undo()
+            self.execute_regress()
         elif btn == 'toolbar-btn-clear':
-            self.flow.clear_evolution()
-
+            try:
+                self.flow.clear_evolution()
+                self.log_view.write(f'> [bold #FFA500]Clear flow memory[/]')
+            except IndexError: self.log_view.write(f'[bold red]Execution error:[/] clear failed')
         elif btn == 'clear-log':
             self.log_view.clear()
-            self.log_view.write(f"[bold green] --- Log Cleared --- [/bold green]")
+            self.log_view.write(f"[bold green] --- Log Cleared --- [/]")
 
     def handle_checkbox_change(self, e: Checkbox.Changed):
         btn: str = e.checkbox.id
@@ -137,7 +145,7 @@ class P(Plugin):
         # self.log_view.write(time.time())  # for debugging timer
         if self._flow_src_diff_check() >= self._hot_after_n_changes:  # only hot-reload after n changes to src
             self._prev_flowlang_src = self.view.code_editor_text_area.text
-            self.execute_run()
+            self.execute_flow()
 
     def _handle_progress_updates(self) -> None:
         self.cft(  # we must call from the main thread to be thread-safe according to docs
@@ -168,50 +176,66 @@ class P(Plugin):
                     self.log_view.write,
                     f"[bold red]Execution Error:[/bold red] {str(e)}"
                 )
+        self.cft(self._toggle_play_stop_buttons)
 
         # show profiler info
         if self.mem_profile.value:
             mem_end = self._process.memory_info().rss / 1024 / 1024
+            # noinspection PyUnboundLocalVariable
             elapsed_time = time.perf_counter() - start_time
+            # noinspection PyUnboundLocalVariable
             mem_diff = mem_end - mem_start
             self.cft(
                 self.log_view.write,
-                f"[bold]Time Spent:[/bold] {elapsed_time:.4f} seconds\n"
-                f"[bold]Memory Change:[/bold] {mem_diff:+.2f} MB\n"
-                f"[bold]Total Studio Memory:[/bold] {mem_end:.2f} MB\n"
+                f"\n==== [bold blue]Memory Profile Report[/] ====\n"
+                f"Time Spent: {elapsed_time:.4f} seconds\n"
+                f"Memory Change: {mem_diff:+.2f} MB\n"
+                f"Total Studio Memory: {mem_end:.2f} MB\n"
             )
 
-    def execute_run(self) -> None:
+    def execute_flow(self) -> None:
         """Handles the flow execution and updates the UI components."""
-        flow_path = self.model.file_path
-        if not flow_path:
-            self.log_view.write("[bold red]Studio Error:[/bold red] No flow selected to run.")
+        if self._worker and self._worker.is_running:  # this should not happen, but stop just in case.
+            self.log_view.write("[bold red]Execution Error:[/] A flow thread is currently running.")
             return
-        if self._running_thread and self._running_thread.is_running:  # do not run while thread is active
-            self.log_view.write("[bold red]Studio Error:[/bold red] A flow thread is currently running.")
-            return
-        self._running_thread = self.view.run_worker(
-            self._execute,
-            thread=True
-        )
-        self.log_view.write(f'[bold green]Run {flow_path.name}...[/bold green]')
-        # TODO: maybe more info will be logged at some point (if deemed useful)
+        try:
+            self._worker = self.view.run_worker(
+                self._execute,
+                thread=True
+            )
+            self._toggle_play_stop_buttons()
+            self.log_view.write(f'> [bold green]Execute [u]{self.model.file_path.name}[/][/]')
+        except Exception as e:  # note: even though _execute handles exceptions, we still want to catch any unforeseen stuff here.
+            if self.show_traceback.value: self.log_view.write(RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
+            else: self.log_view.write(f"[bold red]Execution Error:[/] {str(e)}.")
+        # maybe more info will be logged at some point (if deemed useful)
 
-    def execute_undo(self) -> None:
-        """Handles the flow undo and updates the UI components."""
-        flow_path = self.model.file_path
-        if not flow_path:
-            self.log_view.write("[bold red]Studio Error:[/bold red] No flow selected to undo.")
-            return
-        if self._running_thread and self._running_thread.is_running:  # do not run while thread is active
-            self.log_view.write("[bold red]Studio Error:[/bold red] A flow thread is currently running.")
+    def execute_stop(self) -> None:
+        """Handles the flow execution and updates the UI components."""
+        self.flow.stop_thread()
+        self.log_view.write(f'> [bold red]Stop [u]{self.model.file_path.name}[/][/]')
+
+    def _toggle_play_stop_buttons(self):
+        self.play_button.display, self.stop_button.display = self.stop_button.display, self.play_button.display
+
+    def execute_regress(self) -> None:
+        """Handles the flow regress and updates the UI components."""
+        if self._worker and self._worker.is_running: # this should not happen, but stop just in case.
+            self.log_view.write("[bold red]Regression Error:[/] A flow thread is currently running.")
             return
         try:
             steps: int = int(self.regress_steps.value)
-            self._running_thread = self.view.run_worker(
-                lambda: self.flow.regress(steps),
+            def _():
+                try:
+                    self.flow.regress(steps)
+                    self.cft(self.log_view.write, f'> [bold #FFA500]Regress {steps} steps[/]')
+                except Exception as e:
+                    if self.show_traceback.value: self.cft(self.log_view.write, RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
+                    else: self.cft(self.log_view.write, f"[bold red]Regression Error:[/bold red] {str(e)}")
+            self._worker = self.view.run_worker(
+                _,
                 thread=True
             )
-            self.log_view.write(f'[bold green]Undo last {steps} steps...[/bold green]')
-        except:
-            self.log_view.write("[bold red]Studio Error:[/bold red] Could not execute undo command.")
+        except Exception as e:
+            if self.show_traceback.value: self.log_view.write(RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
+            else: self.log_view.write(f"[bold red]Regression Error:[/] {str(e)}.")

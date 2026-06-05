@@ -427,7 +427,7 @@ class EditorScreen(Screen):
             self.query_one(DirectoryTree).reload()
             return
         safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', path.name)
-        instance_id = f"editor_{self.selected_variant}_{safe_name}"  # must start with something like "editor" to avoid invalid chars for id
+        instance_id = f"editor_{self.selected_variant.replace(' ', '-')}_{safe_name}"  # must start with something like "editor" to avoid invalid chars for id
         if self.editor_instance_switcher.query(f"#{instance_id}"):
             self.editor_instance_switcher.current = instance_id
         else:
