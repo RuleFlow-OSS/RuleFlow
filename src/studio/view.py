@@ -18,7 +18,7 @@ from textual.containers import Container, Center, Horizontal, Vertical, Scrollab
 from textual.screen import Screen, ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
-    DirectoryTree as _DirectoryTree, TextArea as _TextArea, Button, Label,
+    DirectoryTree as _DirectoryTree, TextArea, Button, Label,
     Select, TabbedContent, OptionList, Input, SelectionList,
     Footer, ContentSwitcher, Static, Checkbox, Rule
 )
@@ -55,20 +55,6 @@ class DirectoryTree(_DirectoryTree):
                 continue
             if path.is_dir() or not any(map(path.match, config.HIDDEN_FILE_PATTERNS)):
                 yield path
-
-
-class TextArea(_TextArea):
-    def load_text(self, text: str | None) -> None:
-        """Overrides the load_text method so that placeholders work properly..."""
-        # NOTE: edit history is cleared
-        if text is None:
-            super().load_text("")
-            self.disabled = True
-            self.placeholder = "// Select a .flow file to begin..."
-            return
-        if self.disabled: self.disabled = False
-        super().load_text(text)
-        self.placeholder = f"// This file is empty!\n// Start typing to edit this file..."
 
 
 class ModalDialog(ModalScreen[dict]):
@@ -337,10 +323,11 @@ class EditorInstance(Widget):
             # Code Editor
             self.code_editor_text_area: TextArea = TextArea.code_editor(
                 text=self.MODEL.read_file(),
-                id="code-editor"
+                id="code-editor",
+                theme='css',
+                language=config.SYNTAX_HIGHLIGHTING.get(self.MODEL.file_path.suffix, None)
             )
             yield self.code_editor_text_area
-            # _.register_language()
 
             # Plugin Panel
             with TabbedContent(id="plugin-panel"):

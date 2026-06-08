@@ -15,7 +15,7 @@ dependencies = [
     "pyvis>=0.3.2",
     "regex>=2025.11.3",
     "rich>=14.2.0",
-    "textual>=7.2.0",
+    "textual[syntax]>=7.2.0",
 ]
 
 [dependency-groups]

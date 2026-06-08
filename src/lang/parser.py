@@ -76,7 +76,7 @@ SIMPLE_LITERAL: /[a-zA-Z0-9_.*]+/
 %import common.SIGNED_INT
 %import common.WS
 %import common.NEWLINE
-COMMENT: /\/\/[^\n]*/
+COMMENT: /#[^\n]*/
 
 // Directives (Example: @Universe(ABA) or @Steps(100))
 DIRECTIVE_KEY: /[a-zA-Z0-9_.]+/
