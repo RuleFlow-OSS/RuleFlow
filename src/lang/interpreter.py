@@ -2,20 +2,20 @@
 ==== FUTURE CONSIDERATIONS ====
 - For the 'init' directive, maybe use a save eval such as evalidate rather than the current eval().
 """
-from typing import Any, Type, Iterator, Sequence, Callable, cast
+from typing import Any, Iterator, Sequence, Callable, cast
 type SpecialSelector = Callable[[Any], str]
 
 # Import the base engine classes
 from core.engine import Cell, Flow, RuleSet, SpaceState1D as SpaceState
 from core import vec
-from lang.parser import FlowLangParser
+from lang.parser import bootstrapped_parse, parse
 from lang.implementation import (
     Selector, Target, BaseRule, SubstitutionRule, InsertionRule, OverwriteRule,
     DeletionRule, ShiftingRule, ReverseRule
 )
 
 
-RULE_MAPPER: dict[str, Type[BaseRule]] = {
+RULE_MAPPER: dict[str, type[BaseRule]] = {
     "->": SubstitutionRule,
     ">": InsertionRule,
     "-->": OverwriteRule,
@@ -36,7 +36,7 @@ def interpret_selector(selector_data: dict[str, Any], caller_selector: SpecialSe
         return Selector(type=s_type, selector=s_value)
     elif s_type == "range":
         return Selector(type=s_type, selector=s_value)
-    elif s_type == "llm_prompt" and caller_selector:
+    elif s_type == "special_selector" and caller_selector:
         return Selector(type='regex', selector=caller_selector(s_value))
     raise ValueError(f"Unknown selector type: {s_type}")
 
@@ -130,31 +130,20 @@ class FlowLangBase(Flow):
         with open(path, 'r') as f:
             return self.interpret(f.read())
 
-    def interpret(self, s: str) -> None:
+    def interpret(self, src: str, *args, **kwargs) -> None:
         """Should set the current ruleset and initial space based on interpreted string. Also, handle directives."""
         raise NotImplementedError()
-
-    def regress(self, n_steps: int) -> None:
-        super().regress(n_steps)
-        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if undoing anything...
-            # noinspection PyUnresolvedReferences
-            space.cells.refresh_search_buffer()
-
-    def clear_evolution(self) -> None:
-        super().clear_evolution()
-        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if clearing anything...
-            # noinspection PyUnresolvedReferences
-            space.cells.refresh_search_buffer()
 
 
 class FlowLang(FlowLangBase):
     """The main interpreter object, it is what actually runs any given code."""
 
-    def interpret(self, s: str) -> None:
-        self.ast: dict[str, Any] = cast(dict[str, Any], cast(object, FlowLangParser().parse(s)))  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
+    def interpret(self, src: str, *args,
+                  bootstrapped: bool = False, **kwargs) -> None:
+        self.ast: dict[str, Any] = bootstrapped_parse(src, *args, **kwargs) if bootstrapped else parse(src)  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
         r: dict[str, Any] = interpret_directives(
             {
-                'init': lambda *args: map(eval, map(str, args)),  # used to set the initial universe conditions.
+                'init': lambda *a: map(eval, map(str, a)),  # used to set the initial universe conditions.
                 # We map str to the args because the parser.py auto-converts number characters (and others) to their actual types... str() converts these back.
                 # I know, I know... eval is unsafe. But in this context, I think it's fine because FlowLang is a language built on top of python. Just be careful if using FlowLang on a deployed server for users to use.
                 'mem': lambda mode: mode,  # used to set the cells container for the SpaceState.
@@ -222,6 +211,19 @@ class FlowLang(FlowLangBase):
                             rule_is_active = True
             if not rule_is_active:
                 rule.disabled = True
+
+    def regress(self, n_steps: int) -> None:
+        super().regress(n_steps)
+        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if undoing anything...
+            # noinspection PyUnresolvedReferences
+            space.cells.refresh_search_buffer()
+
+    def clear_evolution(self) -> None:
+        super().clear_evolution()
+        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if clearing anything...
+            # noinspection PyUnresolvedReferences
+            space.cells.refresh_search_buffer()
+
 
 
 if __name__ == "__main__":

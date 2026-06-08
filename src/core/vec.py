@@ -99,7 +99,7 @@ def enable_bytes_cache(b: bool, cache_size: int = _bytes_cache_size):
     globals()['_retrieve_bytes'] = retrieve_bytes
 enable_bytes_cache(True)
 _search_buffer_enabled: bool = True
-_bytearray: type[bytearray | NullByteArray] = NullByteArray  # default is the "Blackhole"
+_bytearray: type[bytearray | NullByteArray] = NullByteArray  # default is the "blackhole"
 def enable_search_buffer(b: bool):
     global _search_buffer_enabled, _bytearray
     if b != _search_buffer_enabled:

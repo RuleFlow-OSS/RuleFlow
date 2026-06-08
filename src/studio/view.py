@@ -24,9 +24,12 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on
+
+from lang import parser
 from studio import config
 from studio import model
 from core.signals import Signal  # we don't use Textual builtin signal system due to limitation with widget mounting being required first.
+from lang import parser as flowlang_parser
 import re
 import asyncio
 
@@ -542,6 +545,7 @@ class Main(App):
         def on_project_opened(result: dict):
             self.project_name = result["project_name"]
             self.project_path = result["project_path"]
+            flowlang_parser.set_working_dir(self.project_path)  # so that mmacros work nicely.
             self.push_screen("editor")
             self.theme = 'rose-pine'
         self.push_screen("welcome", callback=on_project_opened)

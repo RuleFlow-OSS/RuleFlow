@@ -1,47 +1,44 @@
-from integrations import enumerator
 from lark import Lark, Transformer
 from core.numlib import str_to_num, INF
+from lang.builtin_flows import PRESETS, FLOWS
 from typing import Any, cast
+import re
+from pathlib import Path
+WORKING_DIR: Path = Path(__file__).parent
+def set_working_dir(cd: Path) -> None:
+    global WORKING_DIR
+    WORKING_DIR = cd.absolute()
 
 
+# Builtin flows that our parser must have access to for imports/includes
+BUILTIN_FLOWS: dict[str, str] = {}
+BUILTIN_FLOWS.update(PRESETS)
+BUILTIN_FLOWS.update(FLOWS)
+
+# The formal grammar for our DSL
 GRAMMAR = r"""
 start: (global_flags | block | instruction_sequence | directive | COMMENT)*
 
-// ------------------------------------------
-// Top-Level Structure
-// ------------------------------------------
-
-// A statement for global flags, appearing alone (e.g., -ncd)
+// A statement for global flags, appearing alone.
 global_flags: flags
 
-// A instruction block: (-flags) { sequence of instructions... }
-block: "(" flags ")" "{" (instruction_sequence | directive)* "}"  // we allow directives here because they could be rule generation top-level directives.
+// A instruction block: (-flags) ( sequence of instructions... )
+block: "(" flags ")" "(" (instruction_sequence | directive)* ")"  // we allow directives here because they could be rule generation top-level directives.
 
 // Rules inside a group block (must end with a semicolon)
 instruction_sequence: (instruction ";")+
 
-// ------------------------------------------
-// Core Instruction Definition
-// ------------------------------------------
-
 instruction: [selector*] operator [target*] [flags]
 
-// --- Selector ---
 selector: regex_term
-        | caller_term  // this can be used, for instance, by an LLM to transform text into a specialized selector.
         | range_term
         | literal_term
-
-// --- Target ---
 target: literal_term
 
-// We define these as specific terminals to prevent ambiguity
 regex_term: REGEX_LITERAL
-caller_term: STRING_LITERAL
 range_term: RANGE_LITERAL
 literal_term: SIMPLE_LITERAL
 
-// --- Operators ---
 operator: OP_REVERSE
         | OP_OVERWRITE
         | OP_DELETE
@@ -50,13 +47,10 @@ operator: OP_REVERSE
         | OP_SUB
         | OP_INSERT
 
-// --- Flags ---
+// Flags
 flags: flag+
 flag: FLAG_DEF
 
-// ------------------------------------------
-// Terminals
-// ------------------------------------------
 
 // Complex Literals
 REGEX_LITERAL: /\/[^\/]+\//
@@ -78,8 +72,8 @@ FLAG_DEF: /-[a-zA-Z][a-zA-Z0-9_]*(\[[^\]]*\])?/
 // Identifiers & Targets (Simplified to ensure no conflict with flags/operators)
 SIMPLE_LITERAL: /[a-zA-Z0-9_.*]+/
 
-// Structural Tokens
-%import common.SIGNED_INT  // can import other similar standards
+// Structural Tokens (can import other similar standards)
+%import common.SIGNED_INT
 %import common.WS
 %import common.NEWLINE
 COMMENT: /\/\/[^\n]*/
@@ -89,66 +83,29 @@ DIRECTIVE_KEY: /[a-zA-Z0-9_.]+/
 DIRECTIVE_VALUE: /[^(\);)]+/
 directive: "@" DIRECTIVE_KEY "(" [DIRECTIVE_VALUE] ");"
 
-// ------------------------------------------
 // Ignore Rules
-// ------------------------------------------
 %ignore WS
 %ignore NEWLINE
 %ignore COMMENT
 """
 
 
-BUILTIN_IMPORT_PATHS: dict[str, str] = {
-    'ca.fp': "@regex_find_args(overlapped=True);\n"
-             "@compress(0);\n"
-             "@merge(0);\n"
-             "-pl[inf] -mr[0,inf]",  # default import code to streamline the use of CAs in the 0th group.
-    'global_multiway.fp': "@search_buffer(false);\n"  # because the search buffer becomes "corrupt" after edits.
-                          "-gb[false] "  # all rules must be applied (no breaking)
-                          "-sr[0, inf] "
-                          "-mr[0, inf] "
-                          "-bl[inf]",
-    'ordered_multiway.fp': "@search_buffer(false);\n"
-                           "-gb[true] "  # only the first rule (in ordered precedence) that matches is branched out
-                           "-sr[0, inf] "
-                           "-mr[0, inf] "
-                           "-bl[inf]",
-}
-
-
-def _r_parse(value: str) -> dict[str, Any]:
-    """Recursive parsing helper for top-level directives"""
-    return cast(dict[str, Any], cast(object, FlowLangParser(use_transformer=True).parse(value)))
-
-
-def import_directive(path: str) -> list[dict[str, Any]]:
-    """Import from a file or preset"""
-    value: str = BUILTIN_IMPORT_PATHS.get(path, None)
+def macro_directive(path: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Macro (like importing, but simply dropping the src right into the ast) from a file or preset"""
+    value: str = BUILTIN_FLOWS.get(path, None)
     if value is None:
-        with open(f'{path}.flow') as f:
+        with open(WORKING_DIR / path) as f:
             value = f.read()
-    result = _r_parse(value)
-    result['type'] = 'imported'  # we create an "imported" object type.
-    return [result]
-
-
-def decode_directive(method: str, *args) -> list[dict[str, Any]]:
-    """Just use the general functions for rule enumeration and convert that to a string, parse, and return."""
-    if method == 'wns':
-        src: str = ''.join([
-            f'{selector} --> _{target};'
-            for selector, target in enumerator.wolfram_numbering_scheme(*args)
-        ])
-        return _r_parse(src)['instructions']
-    raise ValueError(f'Enumeration method `{method}` is not implemented')
+    result = (bootstrapped_parse if path.endswith('.pflow') else parse)(value, *args, **kwargs)
+    result['type'] = 'macro'  # we create a "macro" object type so that the transformer can resolve/merge it.
+    return result
 
 
 def intercept_top_level_directive(d: dict[str, Any]) -> list[dict[str, Any]]:
+    """Top level directives run BEFORE anything is run. They allow imports/includes to happen, part of constructing the actual flow source."""
     name: str = d['key']
-    if name == 'import':
-        return import_directive(d['value'][0])
-    elif name == 'decode':
-        return decode_directive(*d['value'])
+    if name == 'macro':
+        return [macro_directive(*d['value'])]
     else:  # if there is nothing to intercept just propagate
         return [d]
 
@@ -190,7 +147,7 @@ class FlowLangTransformer(Transformer):
                     global_flags.update(item['flags'])
                 elif item['type'] == 'instruction':
                     instructions.append(item)
-                elif item['type'] == 'imported':
+                elif item['type'] == 'macro':
                     directives.extend(item['directives'])
                     global_flags.update(item['global_flags'])
                     instructions.extend(item['instructions'])
@@ -202,13 +159,13 @@ class FlowLangTransformer(Transformer):
 
     def directive(self, items):
         if items[1]:  # detect None for directives such as `@Test.me()` with no arguments
-            value: tuple = tuple((self.parse_part(p) for p in items[1].value.split(',')))  # parse the args
+            args: tuple = tuple((self.parse_part(p) for p in items[1].value.split(',')))  # parse the args
         else:
-            value: tuple = ()
+            args: tuple = ()
         return intercept_top_level_directive({
             'type': 'directive',
             'key': items[0].value,
-            'value': value
+            'value': args
         })
 
     def global_flags(self, items):
@@ -273,9 +230,6 @@ class FlowLangTransformer(Transformer):
 
     def literal_term(self, items):
         return {"type": "literal", "value": items[0].value}
-
-    def caller_term(self, items):
-        return {"type": "caller", "value": items[0].value[1:-1]}
 
     def range_term(self, items):
         # Parse [x,y] or [x]
@@ -344,26 +298,70 @@ def FlowLangParser(use_transformer: bool = True) -> Lark:
     )
 
 
+def parse(value: str) -> dict[str, Any]:
+    """Recursive parsing helper for top-level directives"""
+    return FlowLangParser(use_transformer=True).parse(value)
+
+
+def bootstrapped_parse(src: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    """
+    Evaluates Python-bootstrapped FlowLang. Code outside `---` blocks runs as standard Python.
+    Code inside `---` blocks is parsed as FlowLang and merged into a final AST.
+    """
+    # Output accumulator for parsed AST fragments
+    out: list[str] = []
+
+    # Regex to capture `---` blocks and their preceding indentation.
+    # We capture the indent to ensure the generated Python maintains valid scope.
+    pattern = re.compile(r'^([ \t]*)---[ \t]*\n(.*?)^[ \t]*---[ \t]*(?=\n|$)', re.MULTILINE | re.DOTALL)
+    def repl(m: re.Match) -> str:
+        indent = m.group(1)
+        content = m.group(2)
+        # Escape any triple-quotes inside the DSL snippet to avoid breaking the f-string
+        content_escaped = content.replace('"""', r'\"\"\"')
+        # Translate the DSL block into an interpolated string execution
+        return f"{indent}__out.append(f\"\"\"{content_escaped}\"\"\")"
+
+    # Setup & run execution environment.
+    exec_globals = {
+        '__out': out,
+        'args': args,
+        'kwargs': kwargs,
+    }
+    python_code = pattern.sub(repl, src)
+    exec(python_code, exec_globals)
+    return parse("".join(out))
+
+
+
 if __name__ == "__main__":
-    # example (different rules can be added to ensure correct parsing):
     from pprint import pprint
-    parser = FlowLangParser(True)
+    pprint(bootstrapped_parse("""
+---
+-a
+---
+"""))
+
+    # # example (different rules can be added to ensure correct parsing):
+
+    # parser = FlowLangParser(True)
+    # # t = parser.parse("""
+    # # // Rule 30
+    # # @init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
+    # # @import(eca_presets);
+    # #
+    # # // define the rules
+    # # @merge(0);
+    # # (-pl[inf] -mr[0,inf]) {
+    # #     @decode(wns, AB, 30);
+    # # }
+    # #
+    # # // Run n times
+    # # @evolve(16);
+    # # """)
     # t = parser.parse("""
-    # // Rule 30
-    # @init(AAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAA);
-    # @import(eca_presets);
-    #
-    # // define the rules
-    # @merge(0);
-    # (-pl[inf] -mr[0,inf]) {
-    #     @decode(wns, AB, 30);
-    # }
-    #
-    # // Run n times
-    # @evolve(16);
-    # """)
-    t = parser.parse("""
-    "test" --> _A_;
-     """)
-    print(type(t))
-    pprint(t)
+    # -a[true]
+    # (-b) (BA --> _A_; BA --> _A_;)
+    #  """)
+    # print(type(t))
+    # pprint(t)

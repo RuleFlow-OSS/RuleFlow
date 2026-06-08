@@ -23,7 +23,7 @@ import math
 
 class P(Plugin):
     name = 'analysis'
-    file_types = ['.flow']
+    file_types = ['.flow', '.pflow']
 
     @property
     def flow(self) -> FlowLang:

@@ -21,7 +21,7 @@ from lang.interpreter import FlowLang
 
 class P(Plugin):
     name = 'run'
-    file_types = ['.flow']
+    file_types = ['.flow', '.pflow']
 
     @property
     def flow(self) -> FlowLang:
@@ -46,7 +46,7 @@ class P(Plugin):
         self._hot_after_n_changes: int = 0  # for fast reference
         self._worker: Worker | None = None  # for checking and managing the current thread
 
-    def controls(self) -> Iterator[Widget]:
+    def controls(self) -> Iterator[Widget]:  # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
         toolbar_btn = (
             pb:=Button("▶", tooltip="Execute", classes="small-btn green", id="toolbar-btn-run", compact=True),
             sb:=Button("■", tooltip="Stop", classes="small-btn red", id="toolbar-btn-stop", compact=True),
@@ -57,9 +57,17 @@ class P(Plugin):
         self.play_button: Button = pb
         self.stop_button: Button = sb
         for btn in toolbar_btn:
+            btn.can_focus = False
             self.view.workspace_toolbar.compose_add_child(btn)
 
-        # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
+        if self.model.file_path.suffix == '.pflow':
+            with Collapsible(title='Programmed Flow', collapsed=False):
+                self.exec_args = Input(id='exec-args')
+                self.exec_args.border_title = 'Args'
+                yield self.exec_args
+                self.exec_kwargs = Input(id='exec-kwargs')
+                self.exec_kwargs.border_title = 'Kwargs'
+                yield self.exec_kwargs
         self.regress_steps = Input(type='integer', value='1')
         self.regress_steps.border_title = 'Regression Steps'
         yield self.regress_steps
@@ -163,7 +171,12 @@ class P(Plugin):
 
         # execute the FlowLang
         try:
-            self.flow.interpret(self.view.code_editor_text_area.text)
+            if self.model.file_path.suffix == '.pflow':
+                args = eval(self.exec_args.value) if self.exec_args.value else ()
+                kwargs = eval(f'(lambda **k: k)({self.exec_kwargs.value})') if self.exec_kwargs.value else {}
+                self.flow.interpret(self.view.code_editor_text_area.text, *args, bootstrapped=True, **kwargs)
+            else:
+                self.flow.interpret(self.view.code_editor_text_area.text)
         except Exception as e:
             # Handle the exception
             if self.show_traceback.value:

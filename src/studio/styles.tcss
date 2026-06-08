@@ -225,7 +225,7 @@ Collapsible {
 }
 
 .small-btn:hover {
-    background: rgba(128,128,128, 0.3);
+    color: white;
 }
 
 /* ---- Colors ---- */

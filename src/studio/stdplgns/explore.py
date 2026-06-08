@@ -77,7 +77,7 @@ class RulesetDashboard(VerticalScroll):
 
 class P(Plugin):
     name = 'explore'
-    file_types = ['.flow']
+    file_types = ['.flow', '.pflow']
 
     @property
     def flow(self) -> FlowLang:
