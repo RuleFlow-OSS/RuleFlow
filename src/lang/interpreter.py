@@ -167,13 +167,17 @@ class FlowLang(FlowLangBase):
             )
         ))
         Vec: type[vec.Vec] = getattr(vec, r.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
-        if not self.events:
-            self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in r['init']])
+        if init:=r.get('init', None):
+            init = tuple(init)
+            # noinspection PyUnresolvedReferences
+            if not self.events or self._last_init_space != init:
+                self._last_init_space = init
+                self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in init])
 
-        # after instantiation
+        # after instantiations
         interpret_directives({
             'evolve': self.evolve,
-            'undo': self.regress,
+            'regress': self.regress,
             'clear': self.clear_evolution,
             'merge': self.__merge_group,
             'compress': self.__compress_group
@@ -223,7 +227,6 @@ class FlowLang(FlowLangBase):
         for space in self.current_event.spaces:  # we must remember to refresh the search buffer if clearing anything...
             # noinspection PyUnresolvedReferences
             space.cells.refresh_search_buffer()
-
 
 
 if __name__ == "__main__":

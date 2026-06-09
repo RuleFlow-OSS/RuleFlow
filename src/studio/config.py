@@ -13,6 +13,9 @@ SYNTAX_HIGHLIGHTING: dict[str, str] = {
     '.flow': 'python',
     '.pflow': 'python',
     '.py': 'python',
+    '.yml': 'yaml',
+    '.yaml': 'yaml',
+    '.nav': 'yaml',
     '.md': 'markdown',
 }
 

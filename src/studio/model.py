@@ -47,8 +47,9 @@ class Model:
                     self.plugins.append(obj(self, view))
 
         # add builtin plugins
-        from studio.stdplgns import run, explore, analysis
-        for module in (run, explore, analysis):
+        from studio.stdplgns.flow import run, explore, analysis
+        from studio.stdplgns.nav import run as nav_run
+        for module in (run, explore, analysis, nav_run):
             grab_plugins(module)
 
         # load all plugins classes

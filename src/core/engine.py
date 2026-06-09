@@ -506,8 +506,6 @@ class Flow:
 
     def _regress(self) -> None:
         """Revert to the last event..."""
-        if self.current_event_idx == 0:
-            return
         for ar in self.current_event.space_deltas:
             for sd in ar.space_deltas:
                 for dc in sd.cell_deltas:

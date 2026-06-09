@@ -430,8 +430,8 @@ class P(Plugin):
                     targets.append(Text(str(tv)))
                 else:  # when `tv` is Sequence[Cell]
                     targets.append(self.space_state_formatter.convert_pure_str(''.join(str(c) for c in tv)))
-            return (Text(', ').join(selectors) if len(selectors) > 1 else selectors[0],
-                    Text(', ').join(targets) if len(targets) > 1 else targets[0])
+            return (Text(', ').join(selectors) if len(selectors) > 1 else selectors[0] if selectors else '',
+                    Text(', ').join(targets) if len(targets) > 1 else targets[0] if targets else '')
 
         old_rows: int = table.row_count
         table.clear()
