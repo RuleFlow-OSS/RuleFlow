@@ -120,13 +120,6 @@ Thread Safety: Engine operations (like run.py processing flows) occur in separat
         self.cft(update_ui)
 
 
-Step 6: Module Export
-
-For the dynamic loader to mount the plugin, a singleton instance of the plugin must be initialized at the bottom of the file.
-
-plugin = MyPlugin()
-
-
 4. Best Practices & Guidelines
 
 State Management: Do not store complex engine data structures directly on the plugin unless necessary (e.g., caching a graph). Query self.model.flow directly when possible to avoid desync issues.

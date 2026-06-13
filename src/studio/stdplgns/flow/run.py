@@ -47,6 +47,7 @@ class P(Plugin):
         self._worker: Worker | None = None  # for checking and managing the current thread
 
     def controls(self) -> Iterator[Widget]:  # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
+        self.view.code_editor_text_area.language = 'python'
         toolbar_btn = (
             pb:=Button("▶", tooltip="Execute", classes="small-btn green", id="toolbar-btn-run", compact=True),
             sb:=Button("■", tooltip="Stop", classes="small-btn red", id="toolbar-btn-stop", compact=True),

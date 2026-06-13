@@ -1,4 +1,4 @@
-from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast, Self
+from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast, Self, Hashable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from copy import copy
@@ -268,7 +268,7 @@ class Rule(ABC):
 
         # Flags (these are only those which modify default RuleSet behavior)
         self.disabled: bool = False  # if the rule is disabled (dead)
-        self.group: int | str = 0  # group together rules this way.
+        self.group: tuple[Hashable, ...] = (0,)  # group together rules this way. Can be part of multiple groups
         self.group_break: bool = True  # break out of the group upon successful application of rule.
         self.always_apply: bool = False  # always apply this rule no matter what (disregards grouping)
         # NOTE: any and all additional flags that modify internal rule behavior MUST (for the sake of clarity) be in the implementation of the rule.
@@ -313,7 +313,7 @@ class RuleSet:
         for rule in self.rules:
             if rule.disabled:
                 continue
-            active: bool = group_management.setdefault(rule.group, True)
+            active: bool = any(group_management.setdefault(g, True) for g in rule.group)
             if not active and not rule.always_apply:
                 continue
             rule_matches: Sequence[RuleMatch] = rule.match(to_spaces)
@@ -321,7 +321,9 @@ class RuleSet:
                 space_deltas: DeltaSpaces = DeltaSpaces(rule.apply(rule_matches), rule)
                 if space_deltas:  # to be robust in case a complex rule still fails (even though input matches were found we can't guarantee that it will always work)
                     applied_rules.append(space_deltas)
-                    if rule.group_break: group_management[rule.group] = False
+                    if rule.group_break:
+                        for g in rule.group:
+                            group_management[g] = False
         return applied_rules
 
 

@@ -183,26 +183,25 @@ class FlowLang(FlowLangBase):
             'compress': self.__compress_group
         }, self.ast['directives'])
 
-    def __merge_group(self, identifier: int | str):
+    def __merge_group(self, *identifiers: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
         rules: list[BaseRule] = cast(list[BaseRule], self.ruleset.rules)
         for i in range(len(rules)):
-            if rules[i].disabled:
+            head = rules[i]
+            if head.disabled:
                  continue
-            if rules[i].group == identifier:
-                head = rules[i]
+            if any(i in head.group for i in identifiers):
                 for j in range(i + 1, len(rules)):
-                    if rules[j].group == identifier:
+                    if any(i in rules[j].group for i in identifiers):
                         head.chain.append(rules[j])
                         rules[j].is_in_chain = True
                 break
 
-    def __compress_group(self, identifier: int | str):
+    def __compress_group(self, *identifiers: int | str):
         """A directive to compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
         rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.ruleset.rules)
-                                 if rule.group == identifier and not rule.disabled]
-        # If any rule makes no changes, disable it.
-        for rule in rules:
+                                 if any(i in rule.group for i in identifiers) and not rule.disabled]
+        for rule in rules:  # If any rule makes no changes, disable it.
             if type(rule) != OverwriteRule:  # we only care about this type of rule... for obvious reasons
                 continue
             rule_is_active: bool = False

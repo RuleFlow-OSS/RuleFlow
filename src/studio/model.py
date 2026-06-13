@@ -48,8 +48,8 @@ class Model:
 
         # add builtin plugins
         from studio.stdplgns.flow import run, explore, analysis
-        from studio.stdplgns.nav import run as nav_run
-        for module in (run, explore, analysis, nav_run):
+        from studio.stdplgns.sss import run as sss_run
+        for module in (run, explore, analysis, sss_run):
             grab_plugins(module)
 
         # load all plugins classes
@@ -97,30 +97,22 @@ class Plugin(ABC):
 
     Required attributes:
     - name: str  # the name of the plugin
-    - file_types: list[str]  # the list of files that are supported.
     - model: Model  # gives the plugin access to the model
     - view: View  # gives the plugin access to the app
+    - file_types: list[str]  # the list of files that are supported.
+    - exclude_file_types: list[str]  # the list of file that are not supported
     """
     name: str = cast(str, cast(object, None))
-    file_types: Sequence[str] = []
 
     def __init__(self, model: Model, view: View) -> None:
         # Define the unset required attributes
-        self._model: Model = model
-        self._view: View = view
-
-    @property
-    def model(self) -> Model:
-        return self._model
-
-    @property
-    def view(self) -> View:
-        return self._view
+        self.model: Model = model
+        self.view: View = view
 
     @property
     def cft(self) -> Callable:
         """Used to call a textual method/function from another thread (for thread-safety)."""
-        return self._view.app.call_from_thread
+        return self.view.app.call_from_thread
 
     @abstractmethod
     def on_initialized(self) -> None:

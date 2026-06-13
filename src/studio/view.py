@@ -306,7 +306,7 @@ class EditorInstance(Widget):
 
     # ==== Composition ====
     def compose(self) -> ComposeResult:
-        self.can_focus = True  # so that if all widgets are hidden, the actions (and bindings) can still toggle.
+        self.can_focus = True  # so that if all widgets are hidden, the actions (and bindings) can still work.
 
         # --- MIDDLE COLUMN: Workspace Panel & Editor---
         with Vertical(id="workspace"):
@@ -325,7 +325,7 @@ class EditorInstance(Widget):
                 text=self.MODEL.read_file(),
                 id="code-editor",
                 theme='css',
-                language=config.SYNTAX_HIGHLIGHTING.get(self.MODEL.file_path.suffix, None)
+                language=config.DEFAULT_SYNTAX_HIGHLIGHTING.get(self.MODEL.file_path.suffix, None)
             )
             yield self.code_editor_text_area
 

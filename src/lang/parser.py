@@ -284,7 +284,7 @@ class FlowLangTransformer(Transformer):
                 if len(arg_parts) == 1:
                     args: int | float | str = self.parse_part(arg_parts[0])
                 else:
-                    args: tuple[int | float | str, ...] = tuple((self.parse_part(p) for p in arg_parts))
+                    args: tuple[int | float | str, ...] = tuple(self.parse_part(p) for p in arg_parts)
 
         return {name: args}
 
