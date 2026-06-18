@@ -98,7 +98,12 @@ class SpaceState(ABC):
 
     @abstractmethod
     def get_all_cells(self) -> Sequence[Cell] | Iterator[Cell]:
-        """Returns all the cells that live in the SpaceState... regardless of the spaces dimensions.
+        """Returns all the cells that live in the SpaceState... regardless of the space's topology.
+        This is useful for modifying all the cells in the SpaceState."""
+
+    @abstractmethod
+    def get_cell(self) -> Cell:
+        """Returns all the cells that live in the SpaceState... regardless of the space's topology.
         This is useful for modifying all the cells in the SpaceState."""
 
     @abstractmethod
@@ -353,7 +358,7 @@ class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[Delt
     def __bool__(self) -> bool:
         return any(self.space_deltas)  # if any changes were recorded.
 
-
+# TODO: maybe cache the properties?
 @dataclass(slots=True)
 class Event:
     time: int  # also known as time - should be unique to every event
@@ -364,7 +369,7 @@ class Event:
     weight: int | float = 1  # could be used for weighted causality tracking. (think of it as a time multiplier/dilator)
     causal_distance_to_creation: int = 0  # minimum distance (min number of nodes) to the creation event node.
 
-    @property  # maybe cache this?
+    @property
     def affected_cells(self) -> Iterator[DeltaCell]:
         """Returns all cell deltas"""
         for r in self.space_deltas:
@@ -373,14 +378,14 @@ class Event:
                     if cell_delta:
                         yield cell_delta
 
-    @property  # maybe cache this?
+    @property
     def causally_connected_events(self) -> Iterator[int]:
         """Returns events (stored as indices) whose created cells were destroyed by this event"""
         for delta in self.affected_cells:
             for cell in delta.destroyed_cells:
                 yield cell.created_at
 
-    @property  # maybe cache this?
+    @property
     def spaces(self) -> Iterator[SpaceState]:
         """Returns all newly created spaces"""
         for r in self.space_deltas:
@@ -389,7 +394,7 @@ class Event:
                     if space is not None:
                         yield space
 
-    @property  # maybe cache this?
+    @property
     def spaces_with_metadata(self) -> Iterator[tuple[DeltaSpaces, DeltaSpace, SpaceState]]:
         """Returns all newly created spaces along with their metadata (in the parent structure)"""
         for r in self.space_deltas:
@@ -477,7 +482,7 @@ class Flow:
                 for dc in sd.cell_deltas:
                     for cell in dc.new_cells:
                         cell.created_at = current_event_idx
-                    for cell in dc.destroyed_cells:
+                    for cell in dc.destroyed_cells:  # TODO reconsider
                         cell.destroyed_at += (current_event_idx,)  # first one, of course, will be the main lineage
 
         # process causal distance to creation

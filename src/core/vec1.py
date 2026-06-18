@@ -162,15 +162,152 @@ def finditer(pattern: str | bytes, search_buffer: bytearray) -> Iterator[re.Matc
     return _retrieve_pattern(pattern).finditer(search_buffer, *_regex_find_args[0], **_regex_find_args[1])
 
 
+import numpy as np
+from typing import Sequence, TypeAlias, NamedTuple
+type Array = np.ndarray[tuple[int]]
+
+
+class Vector(MutableSequence):
+    def __init__(self, data: Sequence[int], dtype: np.unsignedinteger = np.uint8):
+        self.logical_length: int = len(data)
+        # Allocate 1.5x space, with a minimum buffer so tiny arrays don't break
+        self.capacity: float | int = max(int(self.logical_length * 1.5), 16)
+        self.data: Array = np.zeros(self.capacity, dtype=dtype)
+        self.data[:self.logical_length] = data
+
+    @property
+    def logical_data(self) -> Array:
+        return self.data[:self.logical_length]
+
+    def __len__(self) -> int:
+        return self.logical_length
+
+    def __getitem__(self, index: int | slice) -> np.ndarray | int:
+        return self.data[:self.logical_length][index]
+
+    def __setitem__(self, index: int | slice, value: Sequence[int] | int):
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self.logical_length)
+
+            if step != 1:
+                # Extended slices (e.g., vec[0:5:2] = [1,2,3]) must be exact matches
+                if len(value) != len(range(start, stop, step)):
+                    raise ValueError("attempt to assign sequence of size X to extended slice of size Y")
+                self.logical_data[index] = value
+                return
+
+            length_to_remove: int = stop - start
+            new_len: int = len(value)
+            delta: int = new_len - length_to_remove  # The net change in array size
+
+            # Reallocation trigger
+            if self.logical_length + delta > self.capacity:
+                self.capacity = max(int(self.capacity * 1.5), self.logical_length + delta)
+                new_space: Array = np.zeros(self.capacity, dtype=self.data.dtype)
+                new_space[:self.logical_length] = self.data[:self.logical_length]
+                self.data = new_space
+
+            # Shift existing data (One shift only!)
+            if delta != 0:
+                # We move the data that sits AFTER the slice to its new home
+                tail_start = stop
+                tail_end = self.logical_length
+                new_tail_start = start + new_len
+                new_tail_end = new_tail_start + (tail_end - tail_start)
+
+                # NumPy safely handles overlapping memory during this slice assignment
+                self.data[new_tail_start:new_tail_end] = self.data[tail_start:tail_end]
+
+            # Write new data
+            if new_len > 0:
+                self.data[start: start + new_len] = value
+
+            self.logical_length += delta
+
+        else:
+            # Handle standard single-integer assignment: `vec[5] = 42`
+            if index < 0: index += self.logical_length
+            if index < 0 or index >= self.logical_length: raise IndexError("Index out of range")
+            self.data[index] = value
+
+    def __delitem__(self, index: int | slice):
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self.logical_length)
+
+            if step == 1:
+                length_to_remove = stop - start
+                if length_to_remove <= 0:
+                    return
+                # Shift tail left, closing the gap
+                self.data[start: self.logical_length - length_to_remove] = self.data[stop: self.logical_length]
+                self.logical_length -= length_to_remove
+            else:
+                # Fallback for extended slices
+                new_active = np.delete(self.logical_data, index)
+                self.logical_length = len(new_active)
+                self.data[:self.logical_length] = new_active
+        else:
+            if index < 0: index += self.logical_length
+            if index < 0 or index >= self.logical_length: raise IndexError("Index out of range")
+
+            # Shift tail left by 1
+            self.data[index: self.logical_length - 1] = self.data[index + 1: self.logical_length]
+            self.logical_length -= 1
+
+    def insert(self, index: int, value: int) -> None:
+        self[index:index] = value
+
+    def __str__(self) -> str:
+        return str(self.logical_data)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.logical_data})"
+
+
+class Cell(NamedTuple):
+    value: int
+    created_at: int
+    id: int
+
+
+class CellVector(MutableSequence):
+    def __init__(self, data: Sequence[int], id_start: int = 0, dtype: np.unsignedinteger = np.uint8):
+        self.data: Array = Vector(data, dtype=dtype)
+        _dtype: np.dtype = np.uint64
+        self.created_at: Array = Vector(np.zeros(len(self.data), dtype=_dtype), dtype=_dtype)
+        self.ids: Array = Vector(np.arange(id_start, id_start + len(self.data), dtype=_dtype), dtype=_dtype)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, index: int | slice) -> np.ndarray | int:
+        return self.data[index]
+
+    def __setitem__(self, index: int | slice, value: Sequence[int] | int):
+        pass
+
+    def __delitem__(self, index: int | slice):
+        pass
+
+    def insert(self, index: int, value: int) -> None:
+        pass
+
+    def __str__(self) -> str:
+        return str(self.data)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.data})"
+
+
+
 
 # ================================ Vector Implementation ================================
 import numpy as np
-from numpy.typing import NDArray
 from typing import Sequence
 
 
 class Vec(MutableSequence):
-    __slots__ = ('vec', 'search_buffer')
+    __slots__ = ('data', 'search_buffer')
 
     def __init__(self, elems: Sequence[int]):
         self.vec: MutableSequence[Cell] = elems if isinstance(elems, MutableSequence) else list(elems)
@@ -351,4 +488,6 @@ class TrieVec(Vec):
 
 
 if __name__ == '__main__':
-    pass
+    a = np.arange(10)
+    np.delete()
+    print(a)
