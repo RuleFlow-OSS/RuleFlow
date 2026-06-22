@@ -1,54 +1,49 @@
-from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast, Self, Hashable
+from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast, Self, Hashable, Protocol, runtime_checkable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from copy import copy
 from core.signals import Signal
+from copy import copy
 
 
-# ==== engine ====
-@dataclass(slots=True)  # we use slots to get C-like mutable struct behavior (NamedTuple is similar but immutable)
-class Cell:
-    """A single (technically) mutable unit within a universe/string (a.k.a. Quanta). However, it is usually treated as immutable using copy() and hash().
+@runtime_checkable  # this lets isinstance work with implemented Cells. It should be noted, however, that type checks are not performed on attributes or methods, only that the structure exists.
+class Cell(Protocol):
+    """A single unit within a universe (a.k.a. Quanta).
     A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space.
     It is at this smallest unit of space that we care about causality.
 
-    Policies:
-    - The Cell class should not contain any fields other than the quanta and the metadata. This is so copies can be made easily.
+    Note that the `destroyed_at` attribute was deprecated due to adding memory that is rarely used,
+    and is harder to track under a data-oriented approach (problems with lists of lists in numpy for instance)."""
 
-    Future Considerations:
-    - Add additional metadata/tags fields.
-    """
-    quanta: Any
+    @property
+    def quanta(self) -> int:
+        """The semantic value of the cell."""
+        ...
 
-    # NOTE: the metadata is the ONLY thing that makes cells differentiable (other than quanta of course)
-    # Metadata regarding the creation and destruction of the cell... stored as indices to the events array.
-    created_at: int = 0  # this is the ONLY piece important metadata needed for a causality graph (can only be created one, so one event index)
-    destroyed_at: tuple[int, ...] = ()  # OPTIONAL metadata useful for analysis. Is an array of event indices (multiple indices for multiway systems)
+    @quanta.setter
+    def quanta(self, value: int) -> None:
+        """The semantic value of the cell."""
+        ...
 
-    def __str__(self):
-        """String representation of quanta"""
-        return str(self.quanta)
+    @property
+    def created_at(self) -> int:
+        """Getter for `created_at` value (index of the event the cell was created at)."""
+        ...
 
-    def __repr__(self):
-        return repr(self.quanta)
+    @created_at.setter
+    def created_at(self, value: int) -> None:
+        """Setter for `created_at` value."""
+        ...
 
-    def __eq__(self, other: Cell):
-        """Semantic equality (use is for true equality)"""
-        return self.quanta == other.quanta
+    @property
+    def id(self) -> int:
+        """Getter for the unique `id` of the cell."""
+        ...
 
-    # noinspection PyDunderSlots,PyUnresolvedReferences
-    def __copy__(self) -> Cell:
-        n: Cell = object.__new__(self.__class__)
-        n.quanta = self.quanta
-        n.created_at = self.created_at
-        n.destroyed_at = self.destroyed_at
-        return n
+    @id.setter
+    def id(self, value: int) -> None:
+        """Setter for the `id` value."""
+        ...
 
-    def __deepcopy__(self, memo) -> Cell:
-        return self.__copy__()  # force normal copy() behavior
-
-    def __hash__(self):  # implemented to make Cell hashable (so can be used as keys in dict for instance)
-        return hash(self.quanta)
 
 
 class SpaceState(ABC):
@@ -63,12 +58,12 @@ class SpaceState(ABC):
     """
 
     @abstractmethod
-    def __str__(self):
+    def __str__(self) -> str:
         """String representation of SpaceState"""
 
     @abstractmethod
-    def __repr__(self):
-        """Repr String representation of SpaceState"""
+    def __repr__(self) -> str:
+        """Object representation of SpaceState"""
 
     @abstractmethod
     def __eq__(self, other: SpaceState) -> bool:
@@ -83,7 +78,7 @@ class SpaceState(ABC):
         """Should return the bool state of the space (has any contents)."""
 
     @abstractmethod
-    def __hash__(self):
+    def __hash__(self) -> int:
         """Should make the SpaceState hashable so that it can be stored in a hash table."""
 
     @abstractmethod
@@ -112,141 +107,6 @@ class SpaceState(ABC):
         sequence of index positions or more complex positions. An empty set is returned if no matches are found.
         If `instances` is -1, all subspaces should be matched.
         Note that `instances` are useful for creating multi-way systems for example."""
-
-
-class SpaceState1D(SpaceState):
-    """A SpaceState for a single dimensions (string) of space units (cells).
-
-    If sparse is set to True, a persistent data structure is used to share pointers between changes (can save a lot of memory)."""
-    __slots__ = 'cells',
-
-    def __init__(self, cells: MutableSequence[Cell]) -> None:
-        self.cells: MutableSequence[Cell] = cells
-
-    def __str__(self):
-        return ''.join((str(c) for c in self.cells))
-
-    def __repr__(self):
-        return str(self)
-
-    def __eq__(self, other: SpaceState1D) -> bool:
-        for sc, oc in zip(self.cells, other.cells):
-            if sc.quanta != oc.quanta:
-                return False
-        return True
-
-    def __len__(self) -> int:
-        return len(self.cells)
-
-    def __bool__(self) -> bool:
-        return bool(self.cells)
-
-    def __hash__(self):
-        return hash(tuple(self.cells))
-
-    def __copy__(self) -> SpaceState1D:
-        new_space: SpaceState1D = object.__new__(self.__class__)  # create new object without using init
-        new_space.cells = copy(self.cells)
-        return new_space
-
-    def __getitem__(self, item: int | slice) -> Cell | Sequence[Cell]:
-        return self.cells[item]
-
-    def get_all_cells(self) -> Sequence[Cell]:
-        return self.cells
-
-    def find(self, subspace: Sequence[Cell]) -> Iterator[tuple[int, int]]:
-        subspace_len: int = len(subspace)
-        for i in range(len(self.cells) - subspace_len + 1):  # we use left-to-right search
-            if all(self.cells[i + j] == subspace[j] for j in range(subspace_len) if subspace[j].quanta != '.'):
-                yield i, i + subspace_len
-
-    # ==== Custom Modifiers ====
-    def substitute(self, selector: tuple[int, int], new: Sequence[Cell]) -> DeltaCell:
-        start, end = selector
-        destroyed: tuple[Cell, ...] = tuple(self.cells[start:end])
-        self.cells[start:end] = new
-        return DeltaCell(destroyed, new)
-
-    def insert(self, selector: int, new: Sequence[Cell]) -> DeltaCell:
-        if selector < 0:
-            selector = len(self.cells) + selector + 1
-        self.cells[selector:selector] = new
-        return DeltaCell((), new)
-
-    def overwrite(self, selector: int, new: Sequence[Cell]) -> DeltaCell:
-        destroyed: tuple[Cell, ...] = ()
-        new_: tuple[Cell, ...] = ()  # only here due to "_" being a cursor jump/skip operator
-        if selector < 0:
-            selector = len(self.cells) + selector
-        for i in range(len(new)):
-            idx = selector + i
-            new_char: Cell = new[i]
-            if new_char.quanta == '_':  # skip these
-                continue
-            try:
-                destroyed += (self.cells[idx],)
-                self.cells[idx] = new_char
-            except IndexError:
-                self.cells.append(new_char)
-            new_ += (new_char,)
-        return DeltaCell(destroyed, new_)
-
-    def delete(self, selector: tuple[int, int]) -> DeltaCell:
-        start, end = selector
-        destroyed: tuple[Cell, ...] = tuple(self.cells[start:end])
-        self.cells[start:end] = ()
-        return DeltaCell(destroyed, ())
-
-    def shift(self, selector: tuple[int, int], k: int) -> DeltaCell:
-        start, end = selector
-        if end < 0: end = len(self.cells) + end
-        if start < 0: start = len(self.cells) + start
-        if k == 0:
-            pass
-        elif k < 0:
-            k = abs(k)
-            self.cells[end:end] = self.cells[start - k:start]  # insert "before" to "after"
-            self.cells[start - k:start] = ()  # delete before
-        else:
-            temp = self.cells[end:end + k]  # delete "after" but remember it
-            self.cells[end:end + k] = ()
-            self.cells[start:start] = temp  # insert "after" to "before"
-        return DeltaCell((), ())
-
-    def swap(self, selector1: tuple[int, int], selector2: tuple[int, int]) -> DeltaCell:
-        start1, end1 = selector1
-        if end1 < 0: end1 = len(self.cells) + end1
-        if start1 < 0: start1 = len(self.cells) + start1
-        start2, end2 = selector2
-        if end2 < 0: end2 = len(self.cells) + end2
-        if start2 < 0: start2 = len(self.cells) + start2
-        if (start1 < start2 < end1 or start1 < end2 < end1
-                or start2 < start1 < end2 or start2 < end1 < end2):  # we do additional checks to ensure that huge slices are still caught.
-            raise IndexError('The selector indices cannot overlap!')
-        if start2 < start1:
-            start1, start2 = start2, start1
-            end1, end2 = end2, end1
-        temp1 = self.cells[start1:end1]
-        temp2 = self.cells[start2:end2]
-        self.cells[start2:end2] = temp1
-        self.cells[start1:end1] = temp2
-        return DeltaCell((), ())
-
-    def reverse(self, selector: tuple[int, int]) -> DeltaCell:
-        start, end = selector
-        self.cells[start:end] = self.cells[start:end][::-1]
-        return DeltaCell((), ())
-
-
-class SpaceState2D(SpaceState):
-    """It is here that we implement the 2D SpaceState. Just a placeholder for now."""
-    pass
-
-
-class SpaceStateGraph(SpaceState):
-    """It is here that we implement the graph SpaceState. Just a placeholder for now."""
-    pass
 
 
 class RuleMatch(NamedTuple):
@@ -287,7 +147,7 @@ class Rule(ABC):
         """Applies the rule to the given ``SpaceState(s)``. Modified SpaceStates are returned.
         Important for implementation: *new/copied* SpaceState(s) must be created, modified, and returned.
 
-        Rule is responsible for taking all current states to provide maximum flexibility (so different rules can have different behavior: sessies + messies) (TRUST ME!!! I doubted my past self on this and then wasted a bunch of time... just keep it as-is you crazy future self!)
+        Rule is responsible for taking all current states to provide maximum flexibility (so different rules can have different behavior: sessies + messies) (Source: TRUST ME BRO!!! I doubted my past self on this and then wasted a bunch of time... just keep it as-is you crazy future self!)
         """
         pass
 
@@ -361,7 +221,7 @@ class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[Delt
 # TODO: maybe cache the properties?
 @dataclass(slots=True)
 class Event:
-    time: int  # also known as time - should be unique to every event
+    time: int  # also known as time - should be sequential and unique to every event
     space_deltas: list[DeltaSpaces]  # all space deltas (organized by the rules they were applied under)
 
     # metadata
@@ -482,8 +342,6 @@ class Flow:
                 for dc in sd.cell_deltas:
                     for cell in dc.new_cells:
                         cell.created_at = current_event_idx
-                    for cell in dc.destroyed_cells:  # TODO reconsider
-                        cell.destroyed_at += (current_event_idx,)  # first one, of course, will be the main lineage
 
         # process causal distance to creation
         min_prev: int = min((self.events[e_idx].causal_distance_to_creation

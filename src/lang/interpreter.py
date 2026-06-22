@@ -7,7 +7,7 @@ type SpecialSelector = Callable[[Any], str]
 
 # Import the base engine classes
 from core.engine import Cell, Flow, RuleSet, SpaceState1D as SpaceState
-from core import vec
+from core.topologies import vec
 from lang.parser import bootstrapped_parse, parse
 from lang.implementation import (
     Selector, Target, BaseRule, SubstitutionRule, InsertionRule, OverwriteRule,

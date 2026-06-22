@@ -1,5 +1,5 @@
 import unittest
-from src.core.vec import TrieVec, Vec, Cell
+from core.topologies.vec import TrieVec, Vec, Cell
 
 
 class TestTrieVec(unittest.TestCase):

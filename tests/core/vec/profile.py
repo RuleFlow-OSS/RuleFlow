@@ -2,7 +2,7 @@ import timeit
 import psutil
 import os
 import gc
-from src.core.vec import TrieVec, Vec, Cell
+from core.topologies.vec import TrieVec, Vec, Cell
 
 
 def get_mem():

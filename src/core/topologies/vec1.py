@@ -9,11 +9,13 @@ with the current trie-based pvector data structure.
 This would likely be a significant time commitment to implement properly... so do this in the future only when truly needed.
     - Consider implementing these in pure C and making a python interface for maximum performance.
 """
-from pyrsistent import PVector, pvector
-from pyrsistent.typing import PVectorEvolver
-from typing import MutableSequence, Sequence, Literal, Iterator, overload
+from typing import MutableSequence, Sequence, Literal, overload, NamedTuple, Iterator, Callable, Any
 from copy import copy
-from core.engine import Cell
+import numpy as np
+type Array = np.ndarray[tuple[int]]
+# TODO: abstract the finditer
+# TODO: update the SpaceState1D
+# TODO: make sure all current functionality works with new backend
 
 
 # Helper
@@ -162,16 +164,28 @@ def finditer(pattern: str | bytes, search_buffer: bytearray) -> Iterator[re.Matc
     return _retrieve_pattern(pattern).finditer(search_buffer, *_regex_find_args[0], **_regex_find_args[1])
 
 
-import numpy as np
-from typing import Sequence, TypeAlias, NamedTuple
-type Array = np.ndarray[tuple[int]]
+# ================================ Vector Implementation ================================
+
+# Long-term TODO: think about and implement this memory efficient storage data structure...
+# class Piece(NamedTuple):
+#     method: Callable
+#     args: tuple[Any]
+#     kwargs: dict[str, Any]
+#
+#
+# class CellVectorVault:
+#     def __init__(self, data: Sequence[int]):
+#         self.vault: CellVector               # the original read-only data
+#         self.frontier: Vector                # the latest update (so that searches are efficient)
+#         self.pieces: list[Piece] = []        # the updates stored as pieces for this branch
+#         self.parent_branch: CellVectorVault  # the current checkpoint
 
 
 class Vector(MutableSequence):
     def __init__(self, data: Sequence[int], dtype: np.unsignedinteger = np.uint8):
         self.logical_length: int = len(data)
         # Allocate 1.5x space, with a minimum buffer so tiny arrays don't break
-        self.capacity: float | int = max(int(self.logical_length * 1.5), 16)
+        self.capacity: int = self.logical_length
         self.data: Array = np.zeros(self.capacity, dtype=dtype)
         self.data[:self.logical_length] = data
 
@@ -182,11 +196,26 @@ class Vector(MutableSequence):
     def __len__(self) -> int:
         return self.logical_length
 
-    def __getitem__(self, index: int | slice) -> np.ndarray | int:
+    @overload
+    def __getitem__(self, index: int) -> int: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Array: ...
+
+    def __getitem__(self, index):
         return self.data[:self.logical_length][index]
 
-    def __setitem__(self, index: int | slice, value: Sequence[int] | int):
+    @overload
+    def __setitem__(self, index: int, value: int) -> None:
+        ...
+
+    @overload
+    def __setitem__(self, index: slice, value: Sequence[int]) -> None:
+        ...
+
+    def __setitem__(self, index, value) -> None:
         if isinstance(index, slice):
+            value: Sequence[int]
             start, stop, step = index.indices(self.logical_length)
 
             if step != 1:
@@ -230,7 +259,7 @@ class Vector(MutableSequence):
             if index < 0 or index >= self.logical_length: raise IndexError("Index out of range")
             self.data[index] = value
 
-    def __delitem__(self, index: int | slice):
+    def __delitem__(self, index: int | slice) -> None:
         if isinstance(index, slice):
             start, stop, step = index.indices(self.logical_length)
 
@@ -255,42 +284,115 @@ class Vector(MutableSequence):
             self.logical_length -= 1
 
     def insert(self, index: int, value: int) -> None:
-        self[index:index] = value
+        self[index:index] = (value,)
 
     def __str__(self) -> str:
+        # noinspection PyStringConversionWithoutDunderMethod
         return str(self.logical_data)
 
     def __repr__(self) -> str:
+        # noinspection PyStringConversionWithoutDunderMethod
         return f"{self.__class__.__name__}({self.logical_data})"
 
 
 class Cell(NamedTuple):
-    value: int
-    created_at: int
-    id: int
+    vec: CellVector
+    index: int
+
+    @property
+    def quanta(self) -> int:
+        return self.vec.data[self.index]
+
+    @quanta.setter
+    def quanta(self, value: int) -> None:
+        self.vec.data[self.index] = value
+
+    @property
+    def created_at(self) -> int:
+        return self.vec.created_at[self.index]
+
+    @created_at.setter
+    def created_at(self, value: int) -> None:
+        self.vec.created_at[self.index] = value
+
+    @property
+    def id(self) -> int:
+        return self.vec.ids[self.index]
+
+    @id.setter
+    def id(self, value: int) -> None:
+        self.vec.ids[self.index] = value
 
 
 class CellVector(MutableSequence):
     def __init__(self, data: Sequence[int], id_start: int = 0, dtype: np.unsignedinteger = np.uint8):
-        self.data: Array = Vector(data, dtype=dtype)
-        _dtype: np.dtype = np.uint64
-        self.created_at: Array = Vector(np.zeros(len(self.data), dtype=_dtype), dtype=_dtype)
-        self.ids: Array = Vector(np.arange(id_start, id_start + len(self.data), dtype=_dtype), dtype=_dtype)
+        self.data: Vector = Vector(data, dtype=dtype)
+        _dtype: np.uint64 = np.uint64
+        self.created_at: Vector = Vector(np.zeros(len(self.data), dtype=_dtype), dtype=_dtype)
+        self.ids: Vector = Vector(np.arange(id_start, id_start + len(self.data), dtype=_dtype), dtype=_dtype)
+        self.id_start: int = len(self.data)
+
+    @property
+    def as_cells(self) -> Iterator[Cell]:
+        for i in range(len(self.data)):
+            yield Cell(self, i)
+
+    @overload
+    def get_cell(self, index: int) -> Cell: ...
+
+    @overload
+    def get_cell(self, index: slice) -> Iterator[Cell]: ...
+
+    def get_cell(self, index):
+        if isinstance(index, slice):
+            for i in range(*index.indices(len(self.data))):
+                yield Cell(self, i)
+            return None
+        else:
+            return Cell(self, index)
+
+    def next_gen(self) -> CellVector:
+        """Return a copy of the current cell vector."""
+        return copy(self)  # shallow copy (attributes share)
 
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, index: int | slice) -> np.ndarray | int:
+    @overload
+    def __getitem__(self, index: int) -> int: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Array: ...
+
+    def __getitem__(self, index):
         return self.data[index]
 
-    def __setitem__(self, index: int | slice, value: Sequence[int] | int):
-        pass
+    @overload
+    def __setitem__(self, index: int, value: int) -> None: ...
+
+    @overload
+    def __setitem__(self, index: slice, value: Sequence[int]) -> None: ...
+
+    def __setitem__(self, index, value) -> None:
+        if isinstance(index, slice):
+            self.data[index] = value
+            self.created_at[index] = np.zeros(len(value))  # remember that we are not responsible for updating/correcting this attribute
+            self.ids[index] = np.arange(self.id_start, self.id_start + len(value))
+            self.id_start += len(value)
+        else:
+            self.data[index] = value
+            self.created_at[index] = 0  # remember that we are not responsible for updating/correcting this attribute
+            self.ids[index] = self.id_start
+            self.id_start += 1
 
     def __delitem__(self, index: int | slice):
-        pass
+        # propagate to each attribute
+        self.data.__delitem__(index)
+        self.created_at.__delitem__(index)
+        self.ids.__delitem__(index)
 
     def insert(self, index: int, value: int) -> None:
-        pass
+        self[index:index] = (value,)
 
     def __str__(self) -> str:
         return str(self.data)
@@ -299,195 +401,15 @@ class CellVector(MutableSequence):
         return f"{self.__class__.__name__}({self.data})"
 
 
-
-
-# ================================ Vector Implementation ================================
-import numpy as np
-from typing import Sequence
-
-
-class Vec(MutableSequence):
-    __slots__ = ('data', 'search_buffer')
-
-    def __init__(self, elems: Sequence[int]):
-        self.vec: MutableSequence[Cell] = elems if isinstance(elems, MutableSequence) else list(elems)
-        self.search_buffer: bytearray = bytearray((ord(c.quanta) for c in elems))
-
-    def __str__(self):
-        return str(self.vec)
-
-    def __repr__(self):
-        return str(self)
-
-    # ================ Persistence Method Placeholders ================
-    def edit(self):
-        """Enter edit mode (for immutable/persistent internal vectors)."""
-
-    def commit(self):
-        """Commit changes made while in edit mode (for immutable/persistent internal vectors)."""
-
-    # ================ Branching Methods ================
-    def branch(self) -> Vec:
-        """Branch the current vector into a new vector"""
-        nv: Vec = object.__new__(Vec)
-        nv.vec = copy(self.vec)
-        nv.search_buffer = self.search_buffer  # note: becomes out-of-date on self after branch
-        return nv
-
-    def __copy__(self):
-        return self.branch()
-
-    def __deepcopy__(self, memo):  # force it to use self.branch for safety
-        return self.branch()
-
-    def refresh_search_buffer(self):
-        """Must be called if you want to refresh a dirty search buffer."""
-        self.search_buffer = bytearray((ord(c.quanta) for c in self.vec))
-
-    # ================ Viewer Methods ================
-    def __len__(self):
-        return len(self.vec)
-
-    def __iter__(self):
-        self.commit()  # flush any changes
-        return iter(self.vec)
-
-    @overload
-    def __getitem__(self, index: int) -> Cell: ...
-
-    @overload
-    def __getitem__(self, index: slice) -> MutableSequence[Cell]: ...
-
-    def __getitem__(self, index):
-        self.commit()  # flush any changes before getting anything...
-        return self.vec[index]
-
-    def finditer(self, pattern: str | bytes, group: int = 0) -> Iterator[tuple[int, int]]:
-        # group tells span to return for a specific (sub)group within the regex match. 0 is the default and returns the span for the entire match.
-        if not _search_buffer_enabled:
-            self.commit()  # flush any changes
-            buffer = _bytearray((ord(c.quanta) for c in self.vec))  # is bytearray when search buffer is disabled.
-        else:
-            buffer = self.search_buffer
-        for m in finditer(pattern, buffer):
-            yield m.span(group)
-
-    # ================ Modifiers ================
-    @overload
-    def __setitem__(self, index: int, value: Cell) -> None:
-        ...
-
-    @overload
-    def __setitem__(self, index: slice, value: Sequence[Cell]) -> None:
-        ...
-
-    def __setitem__(self, index, value):
-        self.vec[index] = value
-        self.search_buffer[index] = ord(value.quanta) if isinstance(value, Cell) else _retrieve_bytes(value)
-
-    def __delitem__(self, index: int | slice):
-        del self.vec[index]
-        del self.search_buffer[index]
-
-    def append(self, value: Cell):
-        """Append value to end"""
-        self.vec.append(value)
-        self.search_buffer.append(ord(value.quanta))
-
-    def extend(self, values: Sequence[Cell]):
-        """Extend with values"""
-        self.vec.extend(values)
-        self.search_buffer.extend(_retrieve_bytes(values))
-
-    def insert(self, index: int, value: Cell):
-        """Insert value at index"""
-        self.vec.insert(index, value)
-        self.search_buffer.insert(index, ord(value.quanta))
-
-
-class TrieVec(Vec):
-    __slots__ = ('evolver',)
-
-    def __init__(self, elems: Sequence[Cell]):
-        object.__init__(super())
-        self.vec: PVector[Cell] = pvector(elems)
-        self.search_buffer: bytearray = bytearray((ord(c.quanta) for c in elems))
-        self.evolver: PVectorEvolver[Cell] | None = None
-
-    def __str__(self):
-        return 'Vec' + str(self.vec)[7:]
-
-    # Persistence Methods
-    def edit(self):  # we use this rather than .is_dirty() to minimize space use of an evolver object.
-        if self.evolver is None:
-            self.evolver = self.vec.evolver()
-
-    def commit(self):
-        if self.evolver is not None:
-            self.vec = self.evolver.persistent()
-            self.evolver = None
-
-    # Branching Methods
-    def branch(self) -> TrieVec:
-        """Branch the current vector into a new vector"""
-        self.commit()  # flush any changes
-        nv: TrieVec = object.__new__(TrieVec)
-        nv.vec = self.vec  # we don't need to copy as edit() will do that for us
-        nv.evolver = None
-        nv.search_buffer = self.search_buffer  # note: becomes dirty on self after branch
-        # we could auto enter edit mode here... however, that is not necessary as this should work just fine because it is auto entered upon edits.
-        return nv
-
-    # ================ Modifiers ================
-    @overload
-    def __setitem__(self, index: int, value: Cell) -> None: ...
-
-    @overload
-    def __setitem__(self, index: slice, value: Sequence[Cell]) -> None: ...
-
-    def __setitem__(self, index, value):
-        if isinstance(index, slice):
-            value: Sequence[Cell]
-            start, stop, _ = index.indices(len(self.vec))
-            if len(value) == stop - start:  # if we can do point updates
-                self.edit()
-                for i, val in enumerate(value):
-                    self.evolver[start + i] = val
-            else: # Structural Change: because the evolver cannot handle length changes (deletions or insertions)
-                self.commit()  # flush any existing point-updates to the pvec
-                self.vec = self.vec[:start] + pvector(value) + self.vec[stop:]  # does not use the Evolver object as this creates a new node.
-            self.search_buffer[index] = _retrieve_bytes(value)
-            return
-        # if isinstance(index, int):
-        value: Cell
-        self.edit()
-        self.evolver[index] = value
-        self.search_buffer[index] = ord(value.quanta)
-
-    def __delitem__(self, index: int | slice):
-        if isinstance(index, int):
-            self[index:index+1] = ()
-        else:  # if index is a slice
-            self[index] = ()
-
-    def append(self, value: Cell):
-        """Append value to end"""
-        self.edit()
-        self.evolver.append(value)
-        self.search_buffer.append(ord(value.quanta))
-
-    def extend(self, values: Sequence[Cell]):
-        """Extend with values"""
-        self.edit()
-        self.evolver.extend(values)
-        self.search_buffer.extend(_retrieve_bytes(values))
-
-    def insert(self, index, value):
-        """Insert value at index"""
-        self[index:index] = (value,)
-
-
 if __name__ == '__main__':
-    a = np.arange(10)
-    np.delete()
-    print(a)
+    a = CellVector([1, 2, 3, 4, 5, 6])
+    print(a.data)
+    print(a.ids)
+    print('====')
+    a[-2:] = [4, 3, 2, 1]
+    print(a.data)
+    print(a.ids)
+    print('====')
+    a.append(12)
+    print(a.data)
+    print(a.ids)
