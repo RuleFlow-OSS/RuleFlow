@@ -307,7 +307,7 @@ class P(Plugin):
 
                 elements_to_play = []
 
-                # Map the cells to pitch scale degrees and instruments
+                # Map the vec to pitch scale degrees and instruments
                 for i, cell in enumerate(cells):
                     val = str(cell.quanta).strip()
                     if val and val not in ignored_chars:

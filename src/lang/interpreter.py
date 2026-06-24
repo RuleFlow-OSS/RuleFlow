@@ -6,23 +6,20 @@ from typing import Any, Iterator, Sequence, Callable, cast
 type SpecialSelector = Callable[[Any], str]
 
 # Import the base engine classes
-from core.engine import Cell, Flow, RuleSet, SpaceState1D as SpaceState
-from core.topologies import vec
+from core.engine import Cell, Flow, RuleSet
+from core.topologies.nd_space import SpaceState1D
+from core.topologies.vector import Vector
 from lang.parser import bootstrapped_parse, parse
 from lang.implementation import (
-    Selector, Target, BaseRule, SubstitutionRule, InsertionRule, OverwriteRule,
-    DeletionRule, ShiftingRule, ReverseRule
+    Selector, Target, BaseRule, SubstitutionRule, OverwriteRule, InsertionRule, DeletionRule
 )
 
 
 RULE_MAPPER: dict[str, type[BaseRule]] = {
     "->": SubstitutionRule,
-    ">": InsertionRule,
     "-->": OverwriteRule,
+    ">": InsertionRule,
     "><": DeletionRule,
-    ">>": ShiftingRule,
-    "<<": ShiftingRule,
-    ">><<": ReverseRule,
 }
 
 
@@ -146,7 +143,7 @@ class FlowLang(FlowLangBase):
                 'init': lambda *a: map(eval, map(str, a)),  # used to set the initial universe conditions.
                 # We map str to the args because the parser.py auto-converts number characters (and others) to their actual types... str() converts these back.
                 # I know, I know... eval is unsafe. But in this context, I think it's fine because FlowLang is a language built on top of python. Just be careful if using FlowLang on a deployed server for users to use.
-                'mem': lambda mode: mode,  # used to set the cells container for the SpaceState.
+                'mem': lambda mode: mode,  # used to set the vec container for the SpaceState.
 
                 # setters (note: make sure to update any presets in the parser if names are changed here)
                 'target_cache': vec.enable_bytes_cache,

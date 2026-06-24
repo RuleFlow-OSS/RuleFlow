@@ -13,8 +13,8 @@ from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self
 from copy import deepcopy, copy
 from core.numlib import INF
 from core.signals import Signal
+from core.topologies.nd_space import SpaceState1D as SpaceState
 from core.engine import (
-    SpaceState1D as SpaceState,
     Cell,
     Rule as RuleABC,
     RuleMatch,
@@ -78,7 +78,7 @@ class BaseRule(RuleABC):
         self.cmp: Literal["both", "og", "this", "ignore"] = "ignore"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
 
         # apply() flags
-        self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta cells)
+        self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta vec)
         self.no_initial_branch: bool = False  # no initial branch the last space before executing rule (just modify last space) (can still be branched depending on `-pl` limit)
         self.no_delta_submit: bool = False  # if no new states are to be submitted (even if they do occur)
         self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can be executed per run without breaking into another branch).
@@ -148,7 +148,7 @@ class BaseRule(RuleABC):
                     if pattern.type in ('literal', 'regex'):
                         # finds = space.find(tuple(Cell(c) for c in pattern.selector))  # older slow way (before Vec containers)
                         # noinspection PyUnresolvedReferences
-                        finds = space.cells.finditer(pattern.selector)  # FlowLang uses the Vec objects from the custom vec implementation for cells in the space states (look at the interpreter). These Vecs have builtin regex matching.
+                        finds = space.vec.finditer(pattern.selector)  # FlowLang uses the Vec objects from the custom vec implementation for vec in the space states (look at the interpreter). These Vecs have builtin regex matching.
                     elif pattern.type == 'range':
                         finds = iter((pattern.selector,))
                     else: continue
@@ -280,29 +280,19 @@ class SubstitutionRule(BaseRule):
         return space.substitute(selector, deepcopy(target))
 
 
-class InsertionRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
-        return space.insert(selector[0], deepcopy(target))
-
-
 class OverwriteRule(BaseRule):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
         return space.overwrite(selector[0], deepcopy(target))
 
 
+class InsertionRule(BaseRule):
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
+        return space.insert(selector[0], deepcopy(target))
+
+
 class DeletionRule(BaseRule):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: None) -> DeltaCell:
         return space.delete(selector)
-
-
-class ShiftingRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: int) -> DeltaCell:
-        return space.shift(selector, k=target)
-
-
-class ReverseRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: None) -> DeltaCell:
-        return space.reverse(selector)
 
 
 if __name__ == "__main__":

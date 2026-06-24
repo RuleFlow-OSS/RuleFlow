@@ -14,7 +14,7 @@ from typing import Sequence, Self
 
 class EventCausalityGraph(MultiDiGraph):
     def build(self, flow: Flow,
-                 event_range: tuple[int, int, int],
+                 event_range: tuple[int, int, int],  # TODO: make this a slice object
                  collapse_multi_edges: bool = False) -> Self:
         # construct causal graph - because each node is literally the time, and thus index, it can be used to query to the actual event for more granular information.
         connected_container: type[tuple] | type[set] = set if collapse_multi_edges else tuple

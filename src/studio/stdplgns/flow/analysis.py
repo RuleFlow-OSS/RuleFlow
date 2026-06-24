@@ -276,7 +276,7 @@ class P(Plugin):
             flow_str = f"{flow:.4f}"
         except ZeroDivisionError: flow_str = "0.000"
 
-        # update the cells
+        # update the vec
         for i, s in enumerate((edge_node_ratio_str, density_str, depth_str, assort_str, flow_str)):
             self.causal_graph_metrics.update_cell(str(i), "value", s)
 

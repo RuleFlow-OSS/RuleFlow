@@ -12,49 +12,62 @@ class Cell(Protocol):
     It is at this smallest unit of space that we care about causality.
 
     Note that the `destroyed_at` attribute was deprecated due to adding memory that is rarely used,
-    and is harder to track under a data-oriented approach (problems with lists of lists in numpy for instance)."""
+    and is harder to track under a data-oriented approach (problems with lists of lists in numpy for instance).
+
+    Note that NamedTuples satisfy this protocol even though the setter methods throw errors."""
 
     @property
     def quanta(self) -> int:
-        """The semantic value of the cell."""
-        ...
+        """The value of the cell."""
 
     @quanta.setter
     def quanta(self, value: int) -> None:
-        """The semantic value of the cell."""
-        ...
+        """The value of the cell."""
 
     @property
-    def created_at(self) -> int:
-        """Getter for `created_at` value (index of the event the cell was created at)."""
-        ...
+    def generation(self) -> int:
+        """Getter for `generations` value (index of the event the cell was created at)."""
 
-    @created_at.setter
-    def created_at(self, value: int) -> None:
-        """Setter for `created_at` value."""
-        ...
+    @generation.setter
+    def generation(self, value: int) -> None:
+        """Setter for `generations` value."""
 
     @property
     def id(self) -> int:
         """Getter for the unique `id` of the cell."""
-        ...
 
     @id.setter
     def id(self, value: int) -> None:
         """Setter for the `id` value."""
-        ...
 
+
+@runtime_checkable
+class Topology(Protocol):
+    """The data structure implementation that manages the persistence/lower level modification of a state.
+    All topology implementations must follow this protocol.
+    It is also responsible for causality tracking via next_gen."""
+
+    @property
+    def all_cells(self) -> Iterator[Cell]:
+        """Get all cells contained in this topology."""
+
+    def get_cell(self, index: Any) -> Cell:
+        """Get a specific cell within this topology."""
+
+    def get_cells(self, index: Any) -> Iterator[Cell]:
+        """Get a range of Cells within this topology."""
+
+    def next_gen(self) -> Topology:
+        """Return a copy of the current topology but update any necessary attributes such that causality is tracked."""
 
 
 class SpaceState(ABC):
-    """Mutable container made up of `Cells` (a.k.a. Universe State of Space).
+    """Topology wrapper that offers modifiers for the state (a.k.a. Universe State of Space).
 
     Policies:
-    - Should NOT be used as a simple container for Cells (in a replacement rule for instance), it should only be used for actual space states in events/time. Any other container should be in the form Sequence[Cell].
-    - All modifier methods must make sure to create new cells or cell copies if causality is to be tracked properly using the DeltaSets.
-    - All modifier methods (that create/destroy cells) should return DeltaCellSet containing the destroyed and created cells.
-    - All official SpaceStates must be created in this engine.py file. If one wants to create a 4D SpaceState, for instance, they must inherit from this, implement the methods, etc.
-    - All SpaceStates that inherit from this class must implement the modifier methods. If `find`, `len`, etc. are not sufficient helpers, additional helpers may be created here (if they are general enough), or in the subclasses ideally.
+    - Should NOT be used as a simple container for Cells, it should only be a wrapper around an underling topology that provides needed behavior for modifications and analysis.
+    - All modifier methods (that create/destroy vec) should return a DeltaSet containing the destroyed and created vec.
+    - All SpaceStates that inherit from this class must implement the modifier methods. Additional topology specific methods must be accessible via self.topology.
     """
 
     @abstractmethod
@@ -66,47 +79,13 @@ class SpaceState(ABC):
         """Object representation of SpaceState"""
 
     @abstractmethod
-    def __eq__(self, other: SpaceState) -> bool:
-        """Semantic equality (use `is` for true equality)"""
+    def next_gen(self) -> SpaceState:
+        """This is to be used as the method for creating the next generation."""
 
+    @property
     @abstractmethod
-    def __len__(self) -> int | Any:
-        """Should return the *size* of a container... whatever that may mean for N^1 or N^2 or N^3 spaces."""
-
-    @abstractmethod
-    def __bool__(self) -> bool:
-        """Should return the bool state of the space (has any contents)."""
-
-    @abstractmethod
-    def __hash__(self) -> int:
-        """Should make the SpaceState hashable so that it can be stored in a hash table."""
-
-    @abstractmethod
-    def __copy__(self) -> SpaceState | Any:
-        """Copies the SpaceState (self), but does not copy the cells (internal fields) themselves
-        (it only retains references to them). It is a shallow copy.
-        """
-
-    @abstractmethod
-    def __getitem__(self, item: int | slice) -> Cell | Sequence[Cell] | Any:
-        """Enables getting subspaces with slicing: space[0][1] of an N^2 space for instance."""
-
-    @abstractmethod
-    def get_all_cells(self) -> Sequence[Cell] | Iterator[Cell]:
-        """Returns all the cells that live in the SpaceState... regardless of the space's topology.
-        This is useful for modifying all the cells in the SpaceState."""
-
-    @abstractmethod
-    def get_cell(self) -> Cell:
-        """Returns all the cells that live in the SpaceState... regardless of the space's topology.
-        This is useful for modifying all the cells in the SpaceState."""
-
-    @abstractmethod
-    def find(self, subspace: Cell | Sequence[Cell] | Any) -> Iterator[int | Any]:
-        """Find the `instances` number of occurrences of subspaces in the space (in any order desired) and return a
-        sequence of index positions or more complex positions. An empty set is returned if no matches are found.
-        If `instances` is -1, all subspaces should be matched.
-        Note that `instances` are useful for creating multi-way systems for example."""
+    def topology(self) -> Topology:
+        """Returns the topology data structure (i.e. CellVector, HyperGraph, etc.)"""
 
 
 class RuleMatch(NamedTuple):
@@ -192,7 +171,7 @@ class RuleSet:
         return applied_rules
 
 
-class DeltaCell(NamedTuple):  # the cells that were created and destroyed by some SpaceState.modifier() method.
+class DeltaCell(NamedTuple):  # the vec that were created and destroyed by some SpaceState.modifier() method.
     destroyed_cells: Sequence[Cell]
     new_cells: Sequence[Cell]
 
@@ -207,7 +186,7 @@ class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpa
     cell_deltas: Sequence[DeltaCell]  # should be aligned with output_space array (so branches align)
 
     def __bool__(self) -> bool:
-        return any(self.output_space) or any(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta cells due to modifying but not adding or deleting?
+        return any(self.output_space) or any(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta vec due to modifying but not adding or deleting?
 
 
 class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[DeltaSpaces]
@@ -240,10 +219,10 @@ class Event:
 
     @property
     def causally_connected_events(self) -> Iterator[int]:
-        """Returns events (stored as indices) whose created cells were destroyed by this event"""
+        """Returns events (stored as indices) whose created vec were destroyed by this event"""
         for delta in self.affected_cells:
             for cell in delta.destroyed_cells:
-                yield cell.created_at
+                yield cell.generation
 
     @property
     def spaces(self) -> Iterator[SpaceState]:
@@ -298,9 +277,6 @@ class Flow:
         if not self.events:
             self.events.append(cast(Event, cast(object, 0)))
         self.events[0] = Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be `i` as well so that next evolve() works.
-        for i in initial_space:
-            for cell in i.get_all_cells():
-                cell.created_at = 0
 
     def clear_evolution(self) -> None:
         """Clear the evolution."""
@@ -335,14 +311,6 @@ class Flow:
             Event(self.current_event.time + 1, space_deltas=applied_rules)  # create a new event
         )
 
-        # process causality
-        current_event_idx: int = self.current_event_idx
-        for ar in applied_rules:
-            for sd in ar.space_deltas:
-                for dc in sd.cell_deltas:
-                    for cell in dc.new_cells:
-                        cell.created_at = current_event_idx
-
         # process causal distance to creation
         min_prev: int = min((self.events[e_idx].causal_distance_to_creation
                              for e_idx in self.current_event.causally_connected_events),
@@ -357,7 +325,7 @@ class Flow:
         i: int = 0
         self._dirty_thread = False  # must reset
         while i < n_steps:
-            # print(str(next(self.current_event.spaces).cells.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
+            # print(str(next(self.current_event.spaces).vec.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
             self.n_step_progress = (i + 1) / n_steps
             i += 1
             self._evolve()
@@ -388,7 +356,6 @@ class Flow:
             self._regress()
             if self._dirty_thread:
                 break
-
         self.on_undone_n.emit(n_steps)
 
     def stop_thread(self):

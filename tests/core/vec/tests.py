@@ -42,7 +42,7 @@ class TestTrieVec(unittest.TestCase):
 
     def test_structural_change_insertion(self):
         """Test slice __setitem__ with different length (triggers sandwich)."""
-        # "ABCDE" -> "ABXYZCDE" (Insert 3 cells)
+        # "ABCDE" -> "ABXYZCDE" (Insert 3 vec)
         xyz = [Cell(c) for c in "XYZ"]
         self.vec[2:2] = xyz
 
@@ -147,7 +147,7 @@ class TestListVec(unittest.TestCase):
 
     def test_structural_change_insertion(self):
         """Test slice __setitem__ with different length (insertion)."""
-        # "ABCDE" -> "ABXYZCDE" (Insert 3 cells)
+        # "ABCDE" -> "ABXYZCDE" (Insert 3 vec)
         xyz = [Cell(c) for c in "XYZ"]
         self.vec[2:2] = xyz
 

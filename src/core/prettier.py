@@ -69,7 +69,7 @@ class SpaceStateStringFormatter:
         self._rich_mapping = new_mapping
 
     def __call__(self, s: SpaceState, highlight_cells_with_id: frozenset[int] = frozenset()) -> Text:
-        """Fast join using the pre-computed mapping. Also highlight specific cells matching highlight_cells_with_id."""
+        """Fast join using the pre-computed mapping. Also highlight specific vec matching highlight_cells_with_id."""
         rm = self._rich_mapping
         highlighted_cell_style = self.highlighted_cell_style
         def iter_cells() -> Iterator[Text]:

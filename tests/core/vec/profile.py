@@ -15,7 +15,7 @@ def profile_vec_efficiency(v: type[Vec | TrieVec]):
     print(f"=== {v.__name__} Performance & Space Profiler ===")
 
     # Configuration
-    N = 100_000  # Number of cells
+    N = 100_000  # Number of vec
     BRANCHES = 500
     DATA = [Cell(str(i % 10)) for i in range(N)]
     PATTERN = b"ABCDE"
