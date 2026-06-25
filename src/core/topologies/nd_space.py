@@ -30,9 +30,11 @@ class SpaceState1D(SpaceState):
     # ==== Custom Modifiers ====
     def substitute(self, selector: tuple[int, int], new: Sequence[int]) -> DeltaCell:
         k: slice = slice(*selector)
-        destroyed_cells: tuple[Cell, ...] = tuple(self.vec.get_cells(k))
         self.vec[k] = new
-        return DeltaCell(destroyed_cells, tuple(self.vec.get_cells(k)))
+        return DeltaCell(
+            tuple(self.vec.prev_gen.get_cells(k)),
+            tuple(self.vec.get_cells(slice(k.start, k.start + len(new))))
+        )
 
     def overwrite(self, selector: int, new: Sequence[int]) -> DeltaCell:
         destroyed_cells: list[Cell] = []
@@ -45,8 +47,8 @@ class SpaceState1D(SpaceState):
                 continue
             try:
                 idx = selector + i
-                destroyed_cells += (self.vec.get_cell(idx),)
                 self.vec[idx] = new[i]
+                destroyed_cells.append(self.vec.prev_gen.get_cell(idx))
                 new_cells.append(self.vec.get_cell(idx))
             except IndexError:
                 self.vec.append(quanta)
@@ -60,10 +62,9 @@ class SpaceState1D(SpaceState):
         return DeltaCell((), tuple(self.vec.get_cells(slice(selector, len(new)))))
 
     def delete(self, selector: tuple[int, int]) -> DeltaCell:
-        start, end = selector
-        destroyed_cells: tuple[Cell, ...] = tuple(self.vec.get_cells(slice(start, end)))
-        self.vec[start:end] = ()
-        return DeltaCell(destroyed_cells, ())
+        k: slice = slice(*selector)
+        self.vec[k] = ()
+        return DeltaCell(tuple(self.vec.prev_gen.get_cells(k)), ())
 
 
 # noinspection PyAbstractClass

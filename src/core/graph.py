@@ -19,7 +19,7 @@ class EventCausalityGraph(MultiDiGraph):
         # construct causal graph - because each node is literally the time, and thus index, it can be used to query to the actual event for more granular information.
         connected_container: type[tuple] | type[set] = set if collapse_multi_edges else tuple
         for event in flow.events[event_range[0]:event_range[1]+1:event_range[2]]:
-            causally_connected: Sequence[int] = connected_container(event.causally_connected_events)
+            causally_connected: Sequence[int] | set[int] = connected_container(event.causally_connected_events)
             self.add_node(
                 event.time,
                 # these get passed on to the nodes of VisJS network.

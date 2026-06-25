@@ -9,7 +9,8 @@ type SpecialSelector = Callable[[Any], str]
 from core.engine import Cell, Flow, RuleSet
 from core.topologies.nd_space import SpaceState1D
 from core.topologies.vector import Vector
-from lang.parser import bootstrapped_parse, parse
+from lang.parser import parse
+from lang.bootstrapped.python import bootstrapped_py_parse
 from lang.implementation import (
     Selector, Target, BaseRule, SubstitutionRule, OverwriteRule, InsertionRule, DeletionRule
 )
@@ -137,7 +138,7 @@ class FlowLang(FlowLangBase):
 
     def interpret(self, src: str, *args,
                   bootstrapped: bool = False, **kwargs) -> None:
-        self.ast: dict[str, Any] = bootstrapped_parse(src, *args, **kwargs) if bootstrapped else parse(src)  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
+        self.ast: dict[str, Any] = bootstrapped_py_parse(src, *args, **kwargs) if bootstrapped else parse(src)  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
         r: dict[str, Any] = interpret_directives(
             {
                 'init': lambda *a: map(eval, map(str, a)),  # used to set the initial universe conditions.

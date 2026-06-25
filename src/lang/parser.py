@@ -1,5 +1,6 @@
 from lark import Lark, Transformer
 from core.numlib import str_to_num, INF
+from lang import bootstrapped
 from lang.builtin_flows import PRESETS, FLOWS
 from typing import Any, cast
 import re
@@ -92,11 +93,12 @@ directive: "@" DIRECTIVE_KEY "(" [DIRECTIVE_VALUE] ");"
 
 def macro_directive(path: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """Macro (like importing, but simply dropping the src right into the ast) from a file or preset"""
-    value: str = BUILTIN_FLOWS.get(path, None)
+
+    value: str | None = BUILTIN_FLOWS.get(path, None)
     if value is None:
         with open(WORKING_DIR / path) as f:
             value = f.read()
-    result = (bootstrapped_parse if path.endswith('.pflow') else parse)(value, *args, **kwargs)
+    result = (bootstrapped.bootstrapped_py_parse if path.endswith('.pflow') else parse)(value, *args, **kwargs)
     result['type'] = 'macro'  # we create a "macro" object type so that the transformer can resolve/merge it.
     return result
 
@@ -300,48 +302,13 @@ def FlowLangParser(use_transformer: bool = True) -> Lark:
 
 def parse(value: str) -> dict[str, Any]:
     """Recursive parsing helper for top-level directives"""
+    # noinspection PyTypeChecker
     return FlowLangParser(use_transformer=True).parse(value)
-
-
-def bootstrapped_parse(src: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
-    """
-    Evaluates Python-bootstrapped FlowLang. Code outside `---` blocks runs as standard Python.
-    Code inside `---` blocks is parsed as FlowLang and merged into a final AST.
-    """
-    # Output accumulator for parsed AST fragments
-    out: list[str] = []
-
-    # Regex to capture `---` blocks and their preceding indentation.
-    # We capture the indent to ensure the generated Python maintains valid scope.
-    pattern = re.compile(r'^([ \t]*)---[ \t]*\n(.*?)^[ \t]*---[ \t]*(?=\n|$)', re.MULTILINE | re.DOTALL)
-    def repl(m: re.Match) -> str:
-        indent = m.group(1)
-        content = m.group(2)
-        # Escape any triple-quotes inside the DSL snippet to avoid breaking the f-string
-        content_escaped = content.replace('"""', r'\"\"\"')
-        # Translate the DSL block into an interpolated string execution
-        return f"{indent}__out.append(f\"\"\"{content_escaped}\"\"\")"
-
-    # Setup & run execution environment.
-    exec_globals = {
-        '__out': out,
-        'args': args,
-        'kwargs': kwargs,
-    }
-    python_code = pattern.sub(repl, src)
-    exec(python_code, exec_globals)
-    return parse("".join(out))
 
 
 
 if __name__ == "__main__":
-    from pprint import pprint
-    pprint(bootstrapped_parse("""
----
--a
----
-"""))
-
+    pass
     # # example (different rules can be added to ensure correct parsing):
 
     # parser = FlowLangParser(True)

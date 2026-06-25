@@ -2,7 +2,6 @@
 from typing import Sequence, cast
 from core.engine import (
     Flow,
-    Cell,
     Rule as RuleABC,
     RuleMatch,
     RuleSet,
@@ -43,16 +42,22 @@ class SSS(Flow):
         self.set_initial_space([SpaceState(np.frombuffer(initial_space.encode(), dtype=np.uint8))])
         self.set_ruleset(RuleSet([ReplacementRule(s) for s in rule_set]))
 
+    def __str__(self) -> str:
+        return '\n'.join(str(e).replace('65', '_').replace('66', 'B') for e in self.events)
+
 
 if __name__ == "__main__":
     sss = SSS(["ABA -> AAB", "A -> ABA"], "AB")
     sss.evolve(20)
+    print(sss)
+
+    # causal graph
+    from pyvis.network import Network
     g = EventCausalityGraph()
     g.build(sss, (0, 15, 1))
-    from pyvis.network import Network
-    net = Network()
+    net = Network(directed=True)
     net.from_nx(g)
-    net.write_html('causal_graph.html', open_browser=True)
+    net.show('causal_graph.html', notebook=False)
 
     # a = np.frombuffer("ABC".encode(), dtype=np.uint8)
     # print(a)

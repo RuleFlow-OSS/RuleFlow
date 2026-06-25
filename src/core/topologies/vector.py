@@ -11,6 +11,8 @@ type PureVector = np.ndarray[tuple[int]]
 
 
 class Vector(MutableSequence):
+    __slots__ = ('logical_length', 'capacity', 'data')
+
     def __init__(self, data: Sequence[int], dtype: np.unsignedinteger = np.uint8):
         self.logical_length: int = len(data)
         # Allocate 1.5x space, with a minimum buffer so tiny arrays don't break
@@ -134,6 +136,7 @@ class Vector(MutableSequence):
         return f"{self.__class__.__name__}({self.logical_data})"
 
 
+# NOTE: be careful to only create Cell references after edits to a CellVector have taken place (otherwise reference is wrong)
 class Cell(NamedTuple):  # implements the Cell Protocol from core.engine
     vec: CellVector
     index: int
@@ -162,8 +165,13 @@ class Cell(NamedTuple):  # implements the Cell Protocol from core.engine
     def id(self, value: int) -> None:
         self.vec.ids[self.index] = value
 
+    def __repr__(self) -> str:
+        return f'Cell({self.quanta}, {self.generation}, {self.id})'
+
 
 class CellVector(MutableSequence):
+    __slots__ = ('data', 'generations', 'ids', 'id_start', 'generation', 'prev_gen')
+
     def __init__(self,
                  data: Sequence[int],
                  generation: int = 0,
@@ -179,6 +187,7 @@ class CellVector(MutableSequence):
             self.ids: Vector = Vector(id_start, dtype=dtypes[2])
         self.id_start: int = len(self.data)
         self.generation: int = generation
+        self.prev_gen: CellVector = self
 
     @property
     def all_cells(self) -> Iterator[Cell]:
@@ -193,13 +202,14 @@ class CellVector(MutableSequence):
             yield Cell(self, i)
 
     def next_gen(self) -> CellVector:
-        """Return a copy of the current cell vector."""
-        o: CellVector = object.__new__(CellVector)  # shallow copy (attributes share)
+        """Return a copy (next generation) of the current cell vector."""
+        o: CellVector = object.__new__(CellVector)
         o.data = copy(self.data)
         o.generations = copy(self.generations)
         o.ids = copy(self.ids)
         o.id_start = self.id_start
         o.generation = self.generation + 1
+        o.prev_gen = self
         return o
 
     def __len__(self) -> int:
@@ -267,26 +277,27 @@ pass
 #         self.data: CellVector | None         # the vec actual data
 #         self.frontier: Vector                # the latest update (so that searches are efficient)
 #         self.pieces: list[Piece] = []        # the updates stored as pieces for this branch
-#         self.parent_branch: CellVectorVault  # the current checkpoint
+#         self.prev_gen: CellVectorVault       # ...
 #         self.checkpoint: bool                # whether this vault is a checkpoint
 #         self.len: int = len(data)            # the length of the current data
 
 
 if __name__ == '__main__':
     a = CellVector([1, 2, 3, 4, 5, 6])
-    for i in a:
-        print(i)
     print(a.data)
-    print(a.ids)
-    print('====')
-    a[-2:] = [4, 3, 2, 1]
-    print(a.data)
-    print(a.ids)
     print(a.generations)
+    print(a.ids)
+
     print('====')
     b = a.next_gen()
-    b.append(12)
+    b[-2:] = [4, 3, 2, 1]
     print(b.data)
-    print(b.ids)
     print(b.generations)
-    print(a)
+    print(b.ids)
+
+    print('====')
+    c = b.next_gen()
+    c.append(12)
+    print(c.data)
+    print(c.ids)
+    print(c.generations)
