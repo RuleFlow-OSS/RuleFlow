@@ -47,12 +47,10 @@ class Vector(MutableSequence):
         return self.data[:self.logical_length][index]
 
     @overload
-    def __setitem__(self, index: int, value: int) -> None:
-        ...
+    def __setitem__(self, index: int, value: int) -> None: ...
 
     @overload
-    def __setitem__(self, index: slice, value: Sequence[int]) -> None:
-        ...
+    def __setitem__(self, index: slice, value: Sequence[int]) -> None: ...
 
     def __setitem__(self, index, value) -> None:
         if isinstance(index, slice):
@@ -143,27 +141,27 @@ class Cell(NamedTuple):  # implements the Cell Protocol from core.engine
 
     @property
     def quanta(self) -> int:
-        return self.vec.data[self.index]
+        return self.vec.data.data[self.index]
 
     @quanta.setter
     def quanta(self, value: int) -> None:
-        self.vec.data[self.index] = value
+        self.vec.data.data[self.index] = value
 
     @property
     def generation(self) -> int:
-        return self.vec.generations[self.index]
+        return self.vec.generations.data[self.index]
 
     @generation.setter
     def generation(self, value: int) -> None:
-        self.vec.generations[self.index] = value
+        self.vec.generations.data[self.index] = value
 
     @property
     def id(self) -> int:
-        return self.vec.ids[self.index]
+        return self.vec.ids.data[self.index]
 
     @id.setter
     def id(self, value: int) -> None:
-        self.vec.ids[self.index] = value
+        self.vec.ids.data[self.index] = value
 
     def __repr__(self) -> str:
         return f'Cell({self.quanta}, {self.generation}, {self.id})'
@@ -175,19 +173,14 @@ class CellVector(MutableSequence):
     def __init__(self,
                  data: Sequence[int],
                  generation: int = 0,
-                 id_start: int | Sequence[int] = 0,
+                 id_start: int = 65,
                  dtypes: tuple[np.unsignedinteger, ...] = (np.uint8, np.uint64, np.uint64)):
         self.data: Vector = Vector(data, dtype=dtypes[0])
         self.generations: Vector = Vector(np.full(len(self.data), generation, dtype=dtypes[1]), dtype=dtypes[1])
-        if isinstance(id_start, int):
-            self.ids: Vector = Vector(np.arange(id_start, id_start + len(self.data), dtype=dtypes[2]), dtype=dtypes[2])
-        else:
-            if len(data) != len(id_start):
-                raise IndexError("Length of id_start must be equal to length of data")
-            self.ids: Vector = Vector(id_start, dtype=dtypes[2])
-        self.id_start: int = len(self.data)
+        self.ids: Vector = Vector(np.arange(id_start, id_start + len(self.data), dtype=dtypes[2]), dtype=dtypes[2])
+        self.id_start: int = id_start + len(self.data)
         self.generation: int = generation
-        self.prev_gen: CellVector = self
+        self.prev_gen: CellVector = self  # we don't track next gens due to multiple branches being beyond this scope...
 
     @property
     def all_cells(self) -> Iterator[Cell]:

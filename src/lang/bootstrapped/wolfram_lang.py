@@ -13,7 +13,7 @@ _BLOCK_RE = re.compile(
 )
 
 # split into literal / placeholder parts
-_PLACEHOLDER_RE = re.compile(r'\{(.*?)\}', re.DOTALL)
+_PLACEHOLDER_RE = re.compile(r'{(.*?)}', re.DOTALL)
 
 def _escape_wl_literal(s: str) -> str:
     s = s.replace('\\', '\\\\')

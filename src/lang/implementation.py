@@ -1,4 +1,4 @@
-"""The implementation for 1D space that supports the language features.
+"""The implementation for vector-topology rulesets that supports the language features.
 
 Policy:
 - Any multi-ways should have the search_buffer optimization disabled (Vec.enable_search_buffer(False)) so that it doesn't
@@ -10,7 +10,6 @@ Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
 """
 from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self
-from copy import deepcopy, copy
 from core.numlib import INF
 from core.signals import Signal
 from core.topologies.nd_space import SpaceState1D as SpaceState
@@ -25,12 +24,12 @@ from core.engine import (
 
 class Selector(NamedTuple):
     type: Literal["literal", "regex", "range"]
-    selector: str | bytes | tuple[int, int]  # str | bytes is used for both literal and regex
+    selector: bytes | tuple[int, int]  # bytes are used for both literal and regex
 
 
 class Target(NamedTuple):
     type: Literal["literal", "int"]
-    target: Sequence[Cell] | int  # Sequence[Cell] is for most operations, Int for operations such as shifting.
+    target: Sequence[int] | int  # Sequence[int] is for most operations, Int for operations such as inserting.
 
 
 class BaseRule(RuleABC):
@@ -128,7 +127,7 @@ class BaseRule(RuleABC):
 
     # noinspection PyMethodFirstArgAssignment
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
-        top_self = self  # for og reference when we loop through self (comment out to show a great bug example when two universes don't evolve in parallel)
+        top_self: Self = self  # for og reference when we loop through self (comment out to show a great bug example when two universes don't evolve in parallel)
         if self.is_in_chain:
             return ()  # we do not run the rule outside the collective "self"
         out: list[RuleMatch] = []
@@ -146,10 +145,9 @@ class BaseRule(RuleABC):
                 for pattern in self.selector:
                     finds: Iterator[tuple[int, int]]
                     if pattern.type in ('literal', 'regex'):
-                        # finds = space.find(tuple(Cell(c) for c in pattern.selector))  # older slow way (before Vec containers)
-                        # noinspection PyUnresolvedReferences
                         finds = space.vec.finditer(pattern.selector)  # FlowLang uses the Vec objects from the custom vec implementation for vec in the space states (look at the interpreter). These Vecs have builtin regex matching.
                     elif pattern.type == 'range':
+                        # noinspection PyTypeChecker
                         finds = iter((pattern.selector,))
                     else: continue
                     for j, span in enumerate(finds):
@@ -186,12 +184,12 @@ class BaseRule(RuleABC):
             new_cells.extend(delta_cell.new_cells)
         return DeltaCell(destroyed_cells, new_cells)
 
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell] | int | None) -> DeltaCell:
-        raise NotImplementedError('A subclass must implement the correct modifier (e.g. `space.substitute(selector, deepcopy(target))`)')
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int] | int | None) -> DeltaCell:
+        raise NotImplementedError('A subclass must implement the correct modifier (e.g. `space.substitute(selector, target)`)')
 
     # noinspection PyMethodFirstArgAssignment
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
-        top_self: BaseRule = self  # because self is reassigned when self has a chain of followers.
+        top_self: Self = self  # because self is reassigned when self has a chain of followers.
         modified_spaces: list[DeltaSpace] = []
         for rule_match in rule_matches:  # basically loop through all spaces
             # submitted updates
@@ -200,7 +198,7 @@ class BaseRule(RuleABC):
 
             # state of the sim
             prev_space: SpaceState = cast(SpaceState, rule_match.space)
-            current_space: SpaceState = prev_space if self.no_initial_branch else copy(prev_space)
+            current_space: SpaceState = prev_space if self.no_initial_branch else prev_space.next_gen()
             cell_deltas: list[DeltaCell] = []  # stack of the cell deltas that is cleared whenever delta space is submitted
             pl: int = 0  # parallel executions
             bl: int = 0  # branch executions
@@ -209,7 +207,7 @@ class BaseRule(RuleABC):
                 self: BaseRule = rule_match.metadata[idx]  # we need to treat each rule in the chain (specifically those with successful matches which are put in .metadata of the RuleMatch) as though they are "self"
                 if self.target:
                     # noinspection PyUnresolvedReferences
-                    target: Sequence[Cell] | int = self.target[idx % len(self.target)].target  # so that multiple targets are looped over...
+                    target: Sequence[int] | int = self.target[idx % len(self.target)].target  # so that multiple targets are looped over...
                 else:
                     target: None = None
 
@@ -219,7 +217,7 @@ class BaseRule(RuleABC):
                     if self.crp in ('branch', 'branch_nbl'):
                         if self.crp == 'branch' and bl > self.branch_limit:
                             continue
-                        branch: SpaceState = copy(prev_space) if self.branch_origin == 'prev' else copy(current_space)  # note: be careful when using branch_origin=current because of overwriting a conflict pair... just use with caution.
+                        branch: SpaceState = prev_space.next_gen() if self.branch_origin == 'prev' else current_space.next_gen()  # note: be careful when using branch_origin=current because of overwriting a conflict pair... just use with caution.
                         dc: DeltaCell = self._call_space_modifier(branch, selector, target)
                         submitted_spaces.append(
                             branch if not self.no_delta_submit else None
@@ -253,7 +251,7 @@ class BaseRule(RuleABC):
 
                     # set the new current space (branch into another universe)
                     if bl != self.branch_limit:
-                        current_space = copy(prev_space) if self.branch_origin == 'prev' else copy(current_space)  # note: be careful when using branch_origin=current because of overwriting a conflict pair... just use with caution.
+                        current_space = prev_space.next_gen() if self.branch_origin == 'prev' else current_space.next_gen()  # note: be careful when using branch_origin=current because of overwriting a conflict pair... just use with caution.
                         bl += 1
                         self.on_branch.emit(rule_match, idx)
                     else:
@@ -276,18 +274,18 @@ class BaseRule(RuleABC):
 
 
 class SubstitutionRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
-        return space.substitute(selector, deepcopy(target))
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int]) -> DeltaCell:
+        return space.substitute(selector, target)
 
 
 class OverwriteRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
-        return space.overwrite(selector[0], deepcopy(target))
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int]) -> DeltaCell:
+        return space.overwrite(selector[0], target)
 
 
 class InsertionRule(BaseRule):
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[Cell]) -> DeltaCell:
-        return space.insert(selector[0], deepcopy(target))
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int]) -> DeltaCell:
+        return space.insert(selector[0], target)
 
 
 class DeletionRule(BaseRule):

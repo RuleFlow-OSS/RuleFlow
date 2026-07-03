@@ -5,4 +5,5 @@ data structure's responsibility to track attributes. While Cell values can be ch
 maximum cohesion is to have the topology take care of attribute updates. This means that attributes important to
 causality tracking are managed by the topology (such as a cell's ID, or it's generation/created_at attributes).
 Additionally, topologies are responsible for using find/search algorithms designed for their data structures. All
-underlying data structures must remain simple (i.e. not implement specialized substitution methods, for instance.)"""
+underlying data structures must remain simple (i.e. not implement specialized substitution methods, for instance.)
+"""

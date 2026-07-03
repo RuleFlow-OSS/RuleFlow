@@ -6,9 +6,9 @@ TODO:
 - Add options for Nd rendering.
 """
 from string import ascii_uppercase, ascii_lowercase, digits
-from typing import Iterator
+from typing import Iterator, Sequence
 from rich.text import Text
-from core.engine import SpaceState
+from core.topologies.nd_space import SpaceState1D
 
 
 COLOR_PALETTE: list[str] = [
@@ -22,26 +22,27 @@ COLOR_PALETTE: list[str] = [
 ]  # 63 colors for ascii_uppercase + ascii_lowercase + digits + '_'
 
 
-class SpaceStateStringFormatter:
+class SpaceState1DFormatter:
     def __init__(self) -> None:
         # We have these here for maximal configuration.
         self.default_colors = COLOR_PALETTE.copy()
         self.chars = ascii_uppercase + ascii_lowercase + digits + '_'
-
-        # this holds pre-rendered Text objects for every character
-        self._rich_mapping: dict[str, Text] = {}
+        self.highlight_cells_with_id: set[int] | frozenset[int] = set()
         self.highlighted_cell_style: str = 'on yellow'
+
+        # this holds pre-initiated Text objects for every character
+        self._rich_mapping: dict[int, Text] = {}
 
         # initial build
         self.config()
 
     def config(self, styling: bool = True,
-               default_style_to_symbol: bool = False,
+               style_on_symbol: bool = False,
                show_symbols: bool = True,
                cell_padding: bool = True,
-               style_mapping_override: dict[str, str] = None,
+               style_mapping_override: dict[str, str] | None = None,
                clear_default_styles_on_override: bool = False,
-               symbol_mapping_override: dict[str, str] = None) -> None:
+               symbol_mapping_override: dict[str, str] | None = None) -> None:
         """
         Pre-computes the Text objects for the mapping.
         All logic is handled here so __call__ is a pure lookup.
@@ -50,52 +51,62 @@ class SpaceStateStringFormatter:
         if symbol_mapping_override is None: symbol_mapping_override = {}
 
         new_mapping = {}
-        for i, char in enumerate(self.chars):
+        for char in self.chars:
             # determine Display Symbol
             display = symbol_mapping_override.get(char, char) if show_symbols else ""
             # apply Padding
             content = f" {display} " if cell_padding else display
             # determine Style
             style = ""
+            ordinal: int = ord(char)  # so that cells are correctly mapped.
+            color_idx: int = abs(ordinal - 65) % len(self.default_colors)
             if styling:
-                default_style = self.default_colors[i] if default_style_to_symbol else f'on {self.default_colors[i]}'
+                default_style = self.default_colors[color_idx] if style_on_symbol \
+                    else f'on {self.default_colors[color_idx]}'
                 if clear_default_styles_on_override and style_mapping_override:
                     default_style = ''
                 style = style_mapping_override.get(char, default_style)
-            # pre-render and cache the Text object
-            new_mapping[char] = Text(content, style=style, end='')
-
-        new_mapping["\n"] = Text("\n", end='')  # CRITICAL: Cache the newline so __call__ doesn't create objects for it
+            # create and cache the Text object
+            new_mapping[ordinal] = Text(content, style=style, end='')
         self._rich_mapping = new_mapping
 
-    def __call__(self, s: SpaceState, highlight_cells_with_id: frozenset[int] = frozenset()) -> Text:
+    def __call__(self, s: SpaceState1D) -> Text:
         """Fast join using the pre-computed mapping. Also highlight specific vec matching highlight_cells_with_id."""
         rm = self._rich_mapping
+        highlight_cells_with_id = self.highlight_cells_with_id
         highlighted_cell_style = self.highlighted_cell_style
         def iter_cells() -> Iterator[Text]:
-            # noinspection PyUnresolvedReferences
-            for c in s.cells:
-                cell = rm.get(str(c), Text(str(c), end=''))
-                if id(c) in highlight_cells_with_id:
-                    cell = cell.copy()
-                    cell.stylize(highlighted_cell_style)
-                yield cell
+            if highlight_cells_with_id:
+                for c in s.vec.all_cells:
+                    cell: Text = rm.get(c.quanta, Text(chr(c.quanta), end=''))
+                    if c.id in highlight_cells_with_id:
+                        cell = cell.copy()
+                        cell.stylize(highlighted_cell_style)
+                    yield cell
+            else:
+                for c in s.vec:
+                    yield rm.get(c, Text(chr(c), end=''))
         return Text(end='').join(iter_cells())
 
     def convert_pure_str(self, string: str) -> Text:
-        """Utility method in case a given string needs to be styles the same as the space states (can be used in a ruleset printer for instance)."""
+        """Utility method in case a given string needs to be styled the same as the space states (can be used in a ruleset printer for instance)."""
         rm = self._rich_mapping
-        return Text(end='').join(rm.get(str(c), Text(str(c), end='')) for c in string)
+        return Text(end='').join(rm.get(ord(c), Text(c, end='')) for c in string)
+
+    def convert_pure_sequence(self, seq: Sequence[int]) -> Text:
+        """Utility method in case a given string needs to be styled the same as the space states (can be used in a ruleset printer for instance)."""
+        rm = self._rich_mapping
+        return Text(end='').join(rm.get(i, Text(chr(i), end='')) for i in seq)
+
 
 if __name__ == "__main__":
     from implementations.sss import SSS
     from rich.console import Console
-
-    # run your simulation
-    system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space='AB' + ascii_uppercase + ascii_lowercase + digits)
-    system.evolve(0)
-    formatter = SpaceStateStringFormatter()
+    system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space='AB')
+    system.evolve(20)
+    formatter = SpaceState1DFormatter()
+    formatter.highlight_cells_with_id = {6, 26}
     formatter.config(show_symbols=True)
     console = Console(width=1000)
     for event in system.events:
-        console.print(formatter(event.spaces.__next__()))
+        console.print(formatter(next(event.spaces)))

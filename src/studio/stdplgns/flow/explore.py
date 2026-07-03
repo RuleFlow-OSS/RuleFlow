@@ -3,8 +3,7 @@ This plugin provides an exploratory environment for the evolutions of cellular s
 """
 # Textual Imports
 from rich.text import Text
-from textual.widgets import (Collapsible, TabPane, Input, Select,
-                             Checkbox, Label, DataTable as _DataTable, SelectionList, ContentSwitcher)
+from textual.widgets import (Collapsible, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList)
 from textual.widgets.data_table import CellKey
 from textual.widget import Widget
 from textual.coordinate import Coordinate
@@ -13,10 +12,11 @@ from textual.containers import VerticalScroll, Horizontal, Vertical
 from textual.events import MouseMove
 
 # Standard Imports
-from typing import Iterator, Sequence, cast
+from typing import Iterator, Sequence
 from core.numlib import INF, str_to_num, is_infinity
-from core.engine import Event as FlowEvent, SpaceState, Cell as FlowCell, DeltaCell, DeltaSpace, DeltaSpaces
-from core.prettier import SpaceStateStringFormatter
+from core.engine import Event as FlowEvent, Cell as FlowCell, DeltaCell, DeltaSpace, DeltaSpaces
+from core.topologies.nd_space import SpaceState1D as SpaceState
+from core.topologies.prettier import SpaceState1DFormatter
 from core.signals import Signal
 from lang.implementation import BaseRule
 from studio.model import Plugin
@@ -85,7 +85,7 @@ class P(Plugin):
 
     def on_initialized(self) -> None:
         # tools
-        self.space_state_formatter: SpaceStateStringFormatter = SpaceStateStringFormatter()
+        self.space_state_formatter: SpaceState1DFormatter = SpaceState1DFormatter()
         self._cell_ids_to_highlight: frozenset[int] = frozenset()
 
         # attributes
@@ -370,7 +370,7 @@ class P(Plugin):
             reset_highlighted()
             return
         flow_cell: FlowCell = space_state.get_all_cells()[offset]
-        self._cell_ids_to_highlight = frozenset((id(flow_cell),))
+        self._cell_ids_to_highlight = frozenset((flow_cell.id,))
         self._rebuild_rows()
 
         # update the hover info labels
@@ -383,7 +383,7 @@ class P(Plugin):
             destroyed_cells: None = None
         try:  # in separate try block because of the destroyed_at maybe not existing
             cell_destroyed_at: int = flow_cell.destroyed_at[column_idx]
-            lifespan: int = cell_destroyed_at - flow_cell.created_at
+            lifespan: int = cell_destroyed_at - flow_cell.generation
         except IndexError:
             cell_destroyed_at: None = None
             lifespan: None = None
@@ -399,7 +399,7 @@ class P(Plugin):
 
 [bold]Cell #{offset}[/bold]
 • Quanta: {flow_cell.quanta}
-• Created at: {flow_cell.created_at}
+• Created at: {flow_cell.generation}
 • Destroyed at: {cell_destroyed_at}
 • Lifespan: {lifespan}
 """
@@ -509,7 +509,7 @@ class P(Plugin):
 
         # Process the space columns
         spaces: Iterator[SpaceState] = event.spaces
-        formatter: SpaceStateStringFormatter = self.space_state_formatter
+        formatter: SpaceState1DFormatter = self.space_state_formatter
         cells_to_highlight: frozenset[int] = self._cell_ids_to_highlight
         hidden: set[int] = self._hidden_space_columns
         for i in range(self._space_columns_limit):

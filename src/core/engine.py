@@ -1,18 +1,26 @@
-from typing import Any, Sequence, MutableSequence, NamedTuple, Iterator, cast, Self, Hashable, Protocol, runtime_checkable
+"""core.engine
+This implements the necessary abstraction layer and protocols as well as logic flow necessary to
+evolve systems that can be causally tracked."""
+from typing import Any, Sequence, NamedTuple, Iterator, cast, Hashable, Protocol, runtime_checkable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from core.signals import Signal
-from copy import copy
 
 
 @runtime_checkable  # this lets isinstance work with implemented Cells. It should be noted, however, that type checks are not performed on attributes or methods, only that the structure exists.
 class Cell(Protocol):
     """A single unit within a universe (a.k.a. Quanta).
-    A cell is analogous to a discrete spacial-unit and quanta is the matter that fills up that unit of space.
-    It is at this smallest unit of space that we care about causality.
+    A cell is analogous to a discrete/atomic spacial-unit and quanta is the matter that fills up that unit of space.
+    It is at this smallest unit of space that we care about causality. There are two ways that this protocol may be
+    implemented: (1) we store the attributes on the Cell object, or (2) we only store an address to those values in
+    the topology. The second way is preferable, but one must be careful to only make references to that which they
+    know won't change unexpectedly. The second way has the added benefit of additional information attached to each
+    cell, namely its location. This is significant because each Cell is therefore treated as a constant location
+    in space, regardless of what quanta happens to occupy it. An implementation of method (2) can be found in the
+    CellVector implementation (topologies.vector).
 
-    Note that the `destroyed_at` attribute was deprecated due to adding memory that is rarely used,
-    and is harder to track under a data-oriented approach (problems with lists of lists in numpy for instance).
+    Note that the `destroyed_at` attribute was deprecated due to adding memory that is rarely used, and is harder to
+    track (due to multi-ways) under a data-oriented approach (problems with lists of lists in numpy for instance).
 
     Note that NamedTuples satisfy this protocol even though the setter methods throw errors."""
 
@@ -92,7 +100,7 @@ class RuleMatch(NamedTuple):
     """An object that represents a rule match. This is returned by Rule.match() and passed to Rule.apply()."""
     space: SpaceState
     matches: Sequence[tuple[int, int]] | Any  # Any is to support higher dimension matches.
-    conflicts: set[int]  # conflicting matches (idx of the match) that must be resolved.
+    conflicts: set[int] | frozenset[int]  # conflicting matches (idx of the match) that must be resolved.
     metadata: Any = None  # optional metadata
 
 
