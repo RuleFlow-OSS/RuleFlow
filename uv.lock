@@ -645,6 +645,7 @@ dependencies = [
     { name = "regex" },
     { name = "rich" },
     { name = "textual", extra = ["syntax"] },
+    { name = "wcwidth" },
 ]
 
 [package.metadata]
@@ -660,6 +661,7 @@ requires-dist = [
     { name = "regex", specifier = ">=2025.11.3" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "textual", extras = ["syntax"], specifier = ">=7.2.0" },
+    { name = "wcwidth", specifier = ">=0.8.1" },
 ]
 
 [package.metadata.requires-dev]
