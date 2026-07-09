@@ -193,7 +193,7 @@ class BaseRule(RuleABC):
         modified_spaces: list[DeltaSpace] = []
         for rule_match in rule_matches:  # basically loop through all spaces
             # submitted updates
-            submitted_spaces: list[SpaceState | None] = []
+            submitted_spaces: list[SpaceState] = []
             submitted_cell_deltas: list[DeltaCell] = []  # list of (aggregated) DeltaCells that must align with the output space
 
             # state of the sim
@@ -219,9 +219,8 @@ class BaseRule(RuleABC):
                             continue
                         branch: SpaceState = prev_space.next_gen() if self.branch_origin == 'prev' else current_space.next_gen()  # note: be careful when using branch_origin=current because of overwriting a conflict pair... just use with caution.
                         dc: DeltaCell = self._call_space_modifier(branch, selector, target)
-                        submitted_spaces.append(
-                            branch if not self.no_delta_submit else None
-                        )
+                        if not self.no_delta_submit:
+                            submitted_spaces.append(branch)
                         submitted_cell_deltas.append(
                             DeltaCell((), ()) if self.no_causality_tracking else dc
                         )
@@ -239,9 +238,8 @@ class BaseRule(RuleABC):
 
                 # if pl is at max, submit modified space
                 if pl == self.parallel_execution_limit or idx == matches_bound:  # if parallel execution limit is reached OR no more matches for the space
-                    submitted_spaces.append(
-                        current_space if not self.no_delta_submit else None
-                    )
+                    if not self.no_delta_submit:
+                        submitted_spaces.append(current_space)
                     submitted_cell_deltas.append(
                         DeltaCell((), ()) if self.no_causality_tracking else self._aggregate_DeltaCells(cell_deltas)
                     )

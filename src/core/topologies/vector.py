@@ -173,7 +173,7 @@ class CellVector(MutableSequence):
     def __init__(self,
                  data: Sequence[int],
                  generation: int = 0,
-                 id_start: int = 65,
+                 id_start: int = 0,
                  dtypes: tuple[np.unsignedinteger, ...] = (np.uint8, np.uint64, np.uint64)):
         self.data: Vector = Vector(data, dtype=dtypes[0])
         self.generations: Vector = Vector(np.full(len(self.data), generation, dtype=dtypes[1]), dtype=dtypes[1])
@@ -183,7 +183,7 @@ class CellVector(MutableSequence):
         self.prev_gen: CellVector = self  # we don't track next gens due to multiple branches being beyond this scope...
 
     @property
-    def all_cells(self) -> Iterator[Cell]:
+    def as_cells(self) -> Iterator[Cell]:
         for i in range(len(self.data)):
             yield Cell(self, i)
 

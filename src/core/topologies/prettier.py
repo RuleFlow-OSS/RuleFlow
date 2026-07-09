@@ -15,69 +15,61 @@ from wcwidth import wcwidth
 
 
 # Character Set
-PRINTABLE_CHARS: list[str] = [
+PRINTABLE_CHARS = [
     c for c in map(chr, range(33, maxunicode + 1))
     if c.isprintable() and not c.isspace() and wcwidth(c) == 1
 ]
-PRINTABLE_CHARS = (
-        PRINTABLE_CHARS[32:58] +  # A-Z
-        PRINTABLE_CHARS[64:90] +  # a-z
-        PRINTABLE_CHARS[15:25] +  # 0-9
-
-        # stitch together the leftover gaps
-        PRINTABLE_CHARS[:15] +  # Punctuation before numbers (! to /)
-        PRINTABLE_CHARS[25:32] +  # Punctuation between numbers and uppercase (: to @)
-        PRINTABLE_CHARS[58:64] +  # Punctuation between uppercase and lowercase ([ to `)
-        PRINTABLE_CHARS[90:]  # Everything after lowercase ({ and beyond)
-)
-CHAR_TO_INDEX: dict[str, int] = {char: idx for idx, char in enumerate(PRINTABLE_CHARS)}
-# noinspection PyShadowingBuiltins
-def chr(o: int) -> str:
-    return PRINTABLE_CHARS[o]
-# noinspection PyShadowingBuiltins
-def ord(c: str) -> int:
-    return CHAR_TO_INDEX[c]
+ASCII = PRINTABLE_CHARS[:94]
+del PRINTABLE_CHARS[:94]
+PRINTABLE_CHARS[33:33] = ASCII
+def chr_rff(o: int) -> str:
+    try: return PRINTABLE_CHARS[o]
+    except IndexError: return PRINTABLE_CHARS[int(o) % 29824]  # must convert to true int so that c uint works in modulo of PRINTABLE size.
 
 
 # Color Palette (64 Colors)
-COLOR_PALETTE: list[str] = [
-    '#1a4e8b', '#8b0000', '#2d8b2d', '#8b1a72', '#00728b', '#8b5e1a', '#4e1a8b', '#6b8b1a', '#8b1a43', '#1a7e8b',
-    '#7b8b1a', '#5c1a8b', '#1a8b43', '#8b431a', '#1a2d8b', '#8b7b1a', '#8b1a62', '#1a8b7e', '#3c1a8b', '#3d8b1a',
-    '#8b221a', '#1a5c8b', '#1a8b22', '#6e1a8b', '#5a8b1a', '#8b1a82', '#1a8b51', '#8b691a', '#2d1a8b', '#4e8b1a',
-    '#8b1a33', '#1a788b', '#7e8b1a', '#471a8b', '#1a8b34', '#8b3d1a', '#1a3d8b', '#628b1a', '#8b1a6e', '#1a648b',
-    '#758b1a', '#221a8b', '#1a8b4e', '#8b511a', '#348b1a', '#511a8b', '#1a8b6e', '#8b1a22', '#1a4e8b', '#5a8b1a',
-    '#6e1a8b', '#7b8b1a', '#1a8b3d', '#8b2d1a', '#1a228b', '#6b8b1a', '#8b1a7b', '#1a7b8b', '#838b1a', '#431a8b',
-    '#228b1a', '#8b1a4e', '#64676E', '#8b1a44'
-]
+COLOR_PALETTE: list[str] = ['#5a8b1a', '#00728b', '#8b221a', '#1a648b', '#6b8b1a', '#1a2d8b', '#1a4e8b', '#8b2d1a',
+                            '#8b1a7b', '#5a8b1b', '#8b691a', '#8b1a33', '#8b1a44', '#7b8b1a', '#1a8b22', '#8b7b1a',
+                            '#64676E', '#8b1a6e', '#8b0000', '#7e8b1a', '#8b1a4e', '#2d8b2d', '#8b1a82', '#431a8b',
+                            '#1a7e8b', '#628b1a', '#8b431a', '#6e1a8b', '#348b1a', '#4e1a8b', '#8b1a62', '#8b5e1a',
+                            '#1a8b43', '#3c1a8b', '#1a5c8b', '#1a4e8b', '#5c1a8b', '#228b1a', '#8b3d1a', '#6e1a8b',
+                            '#1a7b8b', '#1a8b34', '#8b1a22', '#8b511a', '#8b1a43', '#1a8b51', '#3d8b1a', '#1a8b4e',
+                            '#838b1a', '#1a8b6e', '#6b8b1a', '#1a8b7e', '#1a788b', '#1a3d8b', '#4e8b1a', '#471a8b',
+                            '#7b8b1a', '#1a8b3d', '#221a8b', '#511a8b', '#1a228b', '#758b1a', '#8b1a72', '#2d1a8b']
 
 
 class SpaceState1DFormatter:
+    """
+    IMPORTANT NOTES:
+    - `reset_cache()` must be called when changing any attribute other than `encode_using_property` or `style_using_property`.
+    """
+
     def __init__(self) -> None:
         # this holds pre-initiated Text objects for every character
-        self._rich_cache: dict[int, Text] = {}
+        self.rich_cache: dict[int, Text] = {}
 
         # special modifiers
-        self.highlight_cells_with_id: set[int] | frozenset[int] = set()
-        self.highlighted_cell_style: str = 'on yellow'
+        self.highlight_cells_in_generation: dict[int, str] = {}
+        self.highlight_cells_with_id: dict[int, str] = {}
 
         # style properties
+        self.styling: bool = True
         self.style_on_background: bool = True
-        self.style_mapping_override: dict[int, str] = {}
         self.clear_default_styles_on_override: bool = False
+        self.style_using_property: Literal["quanta", "generation", "id"] = 'quanta'
+        self.style_mapping_override: dict[int, str] = {}
 
         # render properties
-        self.styling: bool = True
-        self.cell_property: Literal["quanta", "generation", "id"] | None = None
         self.encode_ordinals: bool = True
         self.show_symbols: bool = True
         self.cell_padding: bool = True
+        self.encode_using_property: Literal["quanta", "generation", "id"] = 'quanta'
         self.symbol_mapping_override: dict[int, str] = {}
 
-        # initial build
-        self.sync_cache()
-
     def _ordinal_style(self, o: int) -> str:
-        color_idx: int = abs(int(o) - 65) % len(COLOR_PALETTE)
+        if not self.styling:
+            return ''
+        color_idx: int = o % len(COLOR_PALETTE)
         if self.style_mapping_override:
             if self.clear_default_styles_on_override:
                 default_style = ''
@@ -91,8 +83,8 @@ class SpaceState1DFormatter:
 
     def _ordinal_encode(self, o: int) -> str:
         if self.encode_ordinals:
-            try: return chr(o)
-            except IndexError: return "퟼"
+            try: return chr_rff(o)
+            except: return "퟼"
         return str(o)
 
     def _ordinal_render(self, o: int) -> str:
@@ -103,59 +95,83 @@ class SpaceState1DFormatter:
             display: str = self._ordinal_encode(o) if self.show_symbols else ""
             return f" {display} " if self.cell_padding else display
 
-    def sync_cache(self, **kwargs) -> None:
-        """
-        Pre-computes (or syncs to the parameters) the Text objects for the mapping.
-        All logic is handled here so __call__ is a pure lookup.
-        """
-        self.__dict__.update(kwargs)
-        styling: bool = self.styling
-        new_mapping = {}
-        for ordinal in range(94):
-            content: str = self._ordinal_render(ordinal)
-            style: str = ''
-            if styling:
-                style = self._ordinal_style(ordinal)
-            new_mapping[ordinal] = Text(content, style=style, end='')  # cache the Text object
-        self._rich_cache = new_mapping
-
     def __call__(self, s: SpaceState1D) -> Text:
         """Fast join using the pre-computed mapping. Also highlight specific vec matching highlight_cells_with_id."""
-        rm = self._rich_cache
-        def iter_cells() -> Iterator[Text]:
-            if self.highlight_cells_with_id or self.cell_property:
-                cell_property: str = 'quanta' if self.cell_property is None else self.cell_property
-                for c in s.vec.all_cells:
-                    o: int = getattr(c, cell_property)
-                    cell: Text = rm.get(o, Text(self._ordinal_render(o), style=self._ordinal_style(o), end=''))
-                    if c.id in self.highlight_cells_with_id:
-                        cell = cell.copy()
-                        cell.stylize(self.highlighted_cell_style)
-                    yield cell
-            else:
-                for c in s.vec:
-                    yield rm.get(c, Text(self._ordinal_render(c), style=self._ordinal_style(c), end=''))
+        rm = self.rich_cache
+        encode_using_property: str = self.encode_using_property
+        style_using_property: str = self.style_using_property
+        pm: dict[str, int] = {'quanta': 0, 'generation': 1, 'id': 2}
+        if self.highlight_cells_with_id or self.highlight_cells_in_generation:
+            def iter_cells() -> Iterator[Text]:
+                for q, g, i in zip(s.vec.data, s.vec.generations, s.vec.ids):
+                    style: str = (self.highlight_cells_with_id.get(i, False) or
+                                  self.highlight_cells_in_generation.get(g, False))
+                    _ = (q, g, i)
+                    or_: int = _[pm[encode_using_property]]
+                    os_: int = _[pm[style_using_property]]
+                    t: Text = rm.setdefault((or_, os_), Text(self._ordinal_render(or_),
+                                                             style=self._ordinal_style(os_), end=''))
+                    if style:
+                        t = t.copy()
+                        t.stylize(style)
+                        yield t
+                    else:
+                        yield t
+        else:
+            def iter_cells() -> Iterator[Text]:
+                for q, g, i in zip(s.vec.data, s.vec.generations, s.vec.ids):
+                    _ = (q, g, i)
+                    or_: int = _[pm[encode_using_property]]
+                    os_: int = _[pm[style_using_property]]
+                    yield rm.setdefault((or_, os_), Text(self._ordinal_render(or_),
+                                                         style=self._ordinal_style(os_), end=''))
         return Text(end='').join(iter_cells())
 
-    def convert_pure_str(self, string: str) -> Text:
-        """Utility method in case a given string needs to be styled the same as the space states (can be used in a ruleset printer for instance)."""
-        rm = self._rich_cache
-        return Text(end='').join(rm.get(ord(c), Text(c, end='')) for c in string)
+    def reset_cache(self):
+        self.rich_cache.clear()
 
     def convert_pure_sequence(self, seq: Sequence[int]) -> Text:
         """Utility method in case a given string needs to be styled the same as the space states (can be used in a ruleset printer for instance)."""
-        rm = self._rich_cache
-        return Text(end='').join(rm.get(i, Text(chr(i), end='')) for i in seq)
+        rm = self.rich_cache
+        return Text(end='').join(rm.get(c, Text(self._ordinal_render(c), style=self._ordinal_style(c), end='')) for c in seq)
+
+    def convert_pure_str(self, string: str) -> Text:
+        """Utility method in case a given string needs to be styled the same as the space states (can be used in a ruleset printer for instance)."""
+        return self.convert_pure_sequence((ord(c) for c in string))
 
 
 if __name__ == "__main__":
     from implementations.sss import SSS
     from rich.console import Console
     system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space='AB')
-    system.evolve(20)
-    formatter = SpaceState1DFormatter()
-    # formatter.highlight_cells_with_id = {6, 26}
-    # formatter.sync_cache()
+    system.build_multiway_space_links = True
+    system.evolve(100)
+
     console = Console(width=1000)
-    for event in system.events:
-        console.print(formatter(next(event.spaces)))
+    formatter = SpaceState1DFormatter()
+    formatter.encode_using_property = 'quanta'
+    formatter.style_using_property = 'quanta'
+    formatter.encode_ordinals = True
+    formatter.styling = True
+    # formatter.highlight_cells_with_id = {188: 'on black'}
+
+    # Test Branch Walks
+    for idx, ds in enumerate(reversed(list(system.walk_branch((-1, 0))))):
+        console.print(idx, '\t', formatter(ds))
+
+    # Test mid-change
+    # for idx, event in enumerate(system.events):
+    #     console.print(idx, '\t', formatter(next(event.spaces)))
+    #     if idx == 43:
+    #         formatter.encode_using_property = 'quanta'
+    #         formatter.style_using_property = 'generation'
+    #         # formatter.reset_cache()
+
+    # Test Cell Lifespan Detection
+    # formatter.encode_using_property = 'id'
+    # formatter.style_using_property = 'id'
+    # formatter.encode_ordinals = False
+    # formatter.reset_cache()
+    # for idx, event in enumerate(system.events):
+    #     console.print(idx, '\t', formatter(next(event.spaces)))
+    # print(system.find_cell_lifespan([60, 82, 218], slice(0, -1)))

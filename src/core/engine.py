@@ -1,7 +1,8 @@
 """core.engine
 This implements the necessary abstraction layer and protocols as well as logic flow necessary to
 evolve systems that can be causally tracked."""
-from typing import Any, Sequence, NamedTuple, Iterator, cast, Hashable, Protocol, runtime_checkable
+from typing import Any, Sequence, NamedTuple, Iterator, cast, Hashable, Protocol, TypeVar, Generic, runtime_checkable
+from weakref import WeakKeyDictionary
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from core.signals import Signal
@@ -23,30 +24,9 @@ class Cell(Protocol):
     track (due to multi-ways) under a data-oriented approach (problems with lists of lists in numpy for instance).
 
     Note that NamedTuples satisfy this protocol even though the setter methods throw errors."""
-
-    @property
-    def quanta(self) -> int:
-        """The value of the cell."""
-
-    @quanta.setter
-    def quanta(self, value: int) -> None:
-        """The value of the cell."""
-
-    @property
-    def generation(self) -> int:
-        """Getter for `generations` value (index of the event the cell was created at)."""
-
-    @generation.setter
-    def generation(self, value: int) -> None:
-        """Setter for `generations` value."""
-
-    @property
-    def id(self) -> int:
-        """Getter for the unique `id` of the cell."""
-
-    @id.setter
-    def id(self, value: int) -> None:
-        """Setter for the `id` value."""
+    quanta: int
+    generation: int
+    id: int
 
 
 @runtime_checkable
@@ -55,9 +35,8 @@ class Topology(Protocol):
     All topology implementations must follow this protocol.
     It is also responsible for causality tracking via next_gen."""
 
-    @property
-    def all_cells(self) -> Iterator[Cell]:
-        """Get all cells contained in this topology."""
+    as_cells: Iterator[Cell]
+    """Get (usually as a property) all cells contained in this topology."""
 
     def get_cell(self, index: Any) -> Cell:
         """Get a specific cell within this topology."""
@@ -179,7 +158,8 @@ class RuleSet:
         return applied_rules
 
 
-class DeltaCell(NamedTuple):  # the vec that were created and destroyed by some SpaceState.modifier() method.
+class DeltaCell(NamedTuple):
+    """The cells that were created and destroyed by some SpaceState.modifier() method."""
     destroyed_cells: Sequence[Cell]
     new_cells: Sequence[Cell]
 
@@ -187,11 +167,18 @@ class DeltaCell(NamedTuple):  # the vec that were created and destroyed by some 
         return bool(self.destroyed_cells) or bool(self.new_cells)  # if any changes occurred, return true.
 
 
-class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpace]
+class DeltaSpace:  # returned by Rule.apply() in a Sequence[DeltaSpace]
     """Single application of a rule within Rule.apply()."""
-    input_space: SpaceState  # we always have this filled so that we know what spaces had what changes (if any) made
-    output_space: Sequence[SpaceState | None]  # can include many children branches
-    cell_deltas: Sequence[DeltaCell]  # should be aligned with output_space array (so branches align)
+    __slots__ = ('input_space', 'output_space', 'cell_deltas', 'parent_delta')
+
+    def __init__(self, input_space: SpaceState,
+                 output_space: Sequence[SpaceState],
+                 cell_deltas: Sequence[DeltaCell],
+                 parent_delta: DeltaSpace = None) -> None:
+        self.input_space: SpaceState = input_space
+        self.output_space: Sequence[SpaceState] = output_space
+        self.cell_deltas: Sequence[DeltaCell] = cell_deltas  # should be aligned with output_space array
+        self.parent_delta: DeltaSpace = self if parent_delta is None else parent_delta  # this is so that we can traverse the multiway tree and is why this is a slots class rather than a NamedTuple which has problems with mutable fields that are weak referenced.
 
     def __bool__(self) -> bool:
         return any(self.output_space) or any(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta vec due to modifying but not adding or deleting?
@@ -200,10 +187,11 @@ class DeltaSpace(NamedTuple):  # returned by Rule.apply() in a Sequence[DeltaSpa
 class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[DeltaSpaces]
     """All delta spaces that happened under a given rule."""
     space_deltas: Sequence[DeltaSpace]
-    rule: Rule | None
+    rule: Rule
 
     def __bool__(self) -> bool:
         return any(self.space_deltas)  # if any changes were recorded.
+
 
 # TODO: maybe cache the properties?
 @dataclass(slots=True)
@@ -238,17 +226,15 @@ class Event:
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
                 for space in space_delta.output_space:
-                    if space is not None:
-                        yield space
+                    yield space
 
     @property
-    def spaces_with_metadata(self) -> Iterator[tuple[DeltaSpaces, DeltaSpace, SpaceState]]:
+    def spaces_with_metadata(self) -> Iterator[tuple[DeltaSpaces, DeltaSpace, DeltaCell, SpaceState]]:
         """Returns all newly created spaces along with their metadata (in the parent structure)"""
         for r in self.space_deltas:
             for space_delta in r.space_deltas:
-                for space in space_delta.output_space:
-                    if space is not None:
-                        yield r, space_delta, space
+                for cell_delta, space in zip(space_delta.cell_deltas, space_delta.output_space):
+                    yield r, space_delta, cell_delta, space
 
     def __str__(self):
         return '[' + ', '.join(str(space) for space in self.spaces) + ']'  # TODO remove this to a dedicated printer
@@ -260,6 +246,9 @@ class Flow:
     def __init__(self):
         self.ruleset: RuleSet = RuleSet([])  # can be changed at any time to provide a new set of rules.
         self.events: list[Event] = []  # defaults to empty... but nothing will work properly
+
+        # causality tracking controls
+        self.build_multiway_space_links: bool = True
 
         # progress tracking attributes
         self.n_step_progress: float = 0  # percentage of steps run by some_method_n().
@@ -305,11 +294,8 @@ class Flow:
         This can be reimplemented by subclasses to modify behavior. As it stands, it does the following:
         - apply the rules to the current space states using RuleSet.apply()
         - if a rule was successfully applied, create a new event and increment the time ``step``
-        - Update event and cell metadata (important for tracking causality)
-            - set the applied rules (the applied rules are associated with the space states they modified)
-            - extract all the modified space states from the applied rules and add them to the space states of the Event.
         """
-        applied_rules: list[DeltaSpaces] = self.ruleset.apply(to_spaces=tuple(self.current_event.spaces))
+        applied_rules: list[DeltaSpaces] = self.ruleset.apply(tuple(self.current_event.spaces))
         if not any(applied_rules):  # if no rules made any modifications to the spaces
             self.current_event.inert = True
             return
@@ -324,6 +310,20 @@ class Flow:
                              for e_idx in self.current_event.causally_connected_events),
                             default=-1)
         self.current_event.causal_distance_to_creation = min_prev + 1
+
+        # construct the Multiway tree
+        def _():
+            if len(self.events) > 1:
+                parent_event: Event = self.events[-2]
+                current_event: Event = self.events[-1]
+                for cr in current_event.space_deltas:
+                    for c_delta_space in cr.space_deltas:
+                        for pr in parent_event.space_deltas:
+                            for p_delta_space in pr.space_deltas:
+                                if c_delta_space.input_space in p_delta_space.output_space:
+                                    c_delta_space.parent_delta = p_delta_space
+                                    return  # exit the algorithm
+        if self.build_multiway_space_links: _()
 
         # emit any signals
         self.on_evolved_step.emit()
@@ -369,6 +369,42 @@ class Flow:
     def stop_thread(self):
         """Used to safely interrupt any long-running methods in a thread."""
         self._dirty_thread = True
+
+    def walk_branch(self, branch_coord: tuple[int, int]) -> Iterator[SpaceState]:
+        """Each branch has a unique access index (space index, event index)... this is the best way to walk up the event tree from a particular branch leaf."""
+        event_idx, space_idx = branch_coord
+        try:
+            event: Event = self.events[event_idx]
+            g: Iterator[tuple] = event.spaces_with_metadata
+            for _ in range(space_idx): next(g)
+            t: tuple = next(g)
+            branch: DeltaSpace = t[1]
+            yield t[3]  # the space at space_idx
+            while (nb := branch.parent_delta) is not branch:
+                yield branch.input_space
+                branch = nb
+        except StopIteration:
+            raise ValueError("The space index is out of range.")
+        except IndexError:
+            raise ValueError("The event index is out of range.")
+
+    def find_cell_lifespan(
+            self,
+            cell_ids: Sequence[int],
+            event_range: slice = slice(0, -1)
+    ) -> tuple[list[tuple[int, int] | None], list[list[tuple[int, int]]]]:
+        """Returns the branch indices of a cell's lifespan."""
+        destroyed_at: list[list[tuple[int, int]]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
+        created_at: list[tuple[int, int]] = [None] * len(cell_ids)  # can only be created once
+        for event_idx in range(*event_range.indices(len(self.events))):
+            event: Event = self.events[event_idx]
+            for space_idx, (dss, ds, dc, s) in enumerate(event.spaces_with_metadata):
+                for i, cell_id in enumerate(cell_ids):
+                    if not created_at[i] and cell_id in (c.id for c in dc.new_cells):
+                        created_at[i] = (event_idx, space_idx)
+                    if cell_id in (c.id for c in dc.destroyed_cells):
+                        destroyed_at[i].append((event_idx, space_idx))
+        return created_at, destroyed_at
 
     def __str__(self) -> str:
         return '\n'.join(str(e) for e in self.events)
