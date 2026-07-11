@@ -245,7 +245,7 @@ class P(Plugin):
             str_to_num(rs[1]) if rs[1] else INF,
             abs(int(rs[2])) if rs[2] else 1
         )
-        self._causal_graph = EventCausalityGraph().build(self.flow, r, self.collapse_edges.value)
+        self._causal_graph = EventCausalityGraph().build_from_flow(self.flow, r, self.collapse_edges.value)
         self._update_causal_metrics_table(self._causal_graph)
 
     def _update_causal_metrics_table(self, g: EventCausalityGraph) -> None:

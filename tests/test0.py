@@ -1,12 +1,15 @@
-from sys import maxunicode
-from sys import maxunicode
+# for i in range(256):
+#     print(i, chr(i))
+from typing import NamedTuple
 
-PRINTABLE_CHARS = [
-    c for c in map(chr, range(33, maxunicode + 1))
-    if c.isprintable() and not c.isspace()
-]
+class T(NamedTuple):
+    a: int
+    b: int
+    c: set = set()
 
-for i, char in enumerate(PRINTABLE_CHARS):
-    print(i, char)
-    if i > 256:
-        break
+t = T(1, 2)
+t.c.add(3)
+print(t)
+
+a = T(4, 5)
+print(a)

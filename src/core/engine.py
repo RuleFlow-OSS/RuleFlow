@@ -22,6 +22,7 @@ class Cell(Protocol):
 
     Note that the `destroyed_at` attribute was deprecated due to adding memory that is rarely used, and is harder to
     track (due to multi-ways) under a data-oriented approach (problems with lists of lists in numpy for instance).
+    Flow.find_cell_lifespan is used instead and provides much better support for multiways.
 
     Note that NamedTuples satisfy this protocol even though the setter methods throw errors."""
     quanta: int
@@ -384,9 +385,9 @@ class Flow:
                 yield branch.input_space
                 branch = nb
         except StopIteration:
-            raise ValueError("The space index is out of range.")
+            raise IndexError("The space index is out of range.")
         except IndexError:
-            raise ValueError("The event index is out of range.")
+            raise IndexError("The event index is out of range.")
 
     def find_cell_lifespan(
             self,

@@ -96,6 +96,12 @@ class VectorRegexSearch:
 
 
 class VectorLiteralSearch:
+    """For fast exact sub-vector matches."""
+    pass
+
+
+class VectorSymbolicAutomatonSearch:
+    """For large alphabet sub-vector matching (basically generalized regex using automatons)"""
     pass
 
 

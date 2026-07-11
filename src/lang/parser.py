@@ -1,8 +1,7 @@
 from lark import Lark, Transformer
 from core.numlib import str_to_num, INF
-from lang import bootstrapped
 from lang.builtin_flows import PRESETS, FLOWS
-from typing import Any, cast
+from typing import Any, cast, Callable
 import re
 from pathlib import Path
 WORKING_DIR: Path = Path(__file__).parent
@@ -15,6 +14,7 @@ def set_working_dir(cd: Path) -> None:
 BUILTIN_FLOWS: dict[str, str] = {}
 BUILTIN_FLOWS.update(PRESETS)
 BUILTIN_FLOWS.update(FLOWS)
+
 
 # The formal grammar for our DSL
 GRAMMAR = r"""
@@ -93,12 +93,15 @@ directive: "@" DIRECTIVE_KEY "(" [DIRECTIVE_VALUE] ");"
 
 def macro_directive(path: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """Macro (like importing, but simply dropping the src right into the ast) from a file or preset"""
-
+    from lang.bootstrapped.python import bootstrapped_py_parse  # import here to avoid cyclic errors
+    from lang.bootstrapped.wolfram import bootstrapped_wl_parse
+    bootstrapped: dict[str, Callable] = {'.pflow': bootstrapped_py_parse, '.wpflow': bootstrapped_wl_parse}
     value: str | None = BUILTIN_FLOWS.get(path, None)
     if value is None:
         with open(WORKING_DIR / path) as f:
             value = f.read()
-    result = (bootstrapped.bootstrapped_py_parse if path.endswith('.pflow') else parse)(value, *args, **kwargs)
+    parser: Callable = bootstrapped.get(path.rsplit('.')[1], parse)  # fallback in pure .flow parser (defined below)
+    result = parser(value, *args, **kwargs)
     result['type'] = 'macro'  # we create a "macro" object type so that the transformer can resolve/merge it.
     return result
 
@@ -304,7 +307,6 @@ def parse(value: str) -> dict[str, Any]:
     """Recursive parsing helper for top-level directives"""
     # noinspection PyTypeChecker
     return FlowLangParser(use_transformer=True).parse(value)
-
 
 
 if __name__ == "__main__":
