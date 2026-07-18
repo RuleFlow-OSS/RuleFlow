@@ -9,22 +9,8 @@ from string import ascii_uppercase, ascii_lowercase, digits
 from typing import Iterator, Sequence
 from rich.text import Text
 from core.topologies.nd_space import SpaceState1D
+from core.topologies.tooling.rff_encoding import chr_rff
 from typing import Literal
-from sys import maxunicode
-from wcwidth import wcwidth
-
-
-# Character Set
-PRINTABLE_CHARS = [
-    c for c in map(chr, range(33, maxunicode + 1))
-    if c.isprintable() and not c.isspace() and wcwidth(c) == 1
-]
-ASCII = PRINTABLE_CHARS[:94]
-del PRINTABLE_CHARS[:94]
-PRINTABLE_CHARS[33:33] = ASCII
-def chr_rff(o: int) -> str:
-    try: return PRINTABLE_CHARS[o]
-    except IndexError: return PRINTABLE_CHARS[int(o) % 29824]  # must convert to true int so that c uint works in modulo of PRINTABLE size.
 
 
 # Color Palette (64 Colors)
@@ -56,29 +42,29 @@ class SpaceState1DFormatter:
         self.styling: bool = True
         self.style_on_background: bool = True
         self.clear_default_styles_on_override: bool = False
-        self.style_using_property: Literal["quanta", "generation", "id"] = 'quanta'
+        self.style_using_property: Literal["quanta", "generation", "id"] = "quanta"
         self.style_mapping_override: dict[int, str] = {}
 
         # render properties
         self.encode_ordinals: bool = True
         self.show_symbols: bool = True
-        self.cell_padding: bool = True
-        self.encode_using_property: Literal["quanta", "generation", "id"] = 'quanta'
+        self.cell_padding: int = 3
+        self.encode_using_property: Literal["quanta", "generation", "id"] = "quanta"
         self.symbol_mapping_override: dict[int, str] = {}
 
     def _ordinal_style(self, o: int) -> str:
         if not self.styling:
-            return ''
+            return ""
         color_idx: int = o % len(COLOR_PALETTE)
         if self.style_mapping_override:
             if self.clear_default_styles_on_override:
-                default_style = ''
+                default_style = ""
             else:
-                default_style = f'on {COLOR_PALETTE[color_idx]}' if self.style_on_background \
+                default_style = f"on {COLOR_PALETTE[color_idx]}" if self.style_on_background \
                     else COLOR_PALETTE[color_idx]
             return self.style_mapping_override.get(o, default_style)
         else:
-            return f'on {COLOR_PALETTE[color_idx]}' if self.style_on_background \
+            return f"on {COLOR_PALETTE[color_idx]}" if self.style_on_background \
                 else COLOR_PALETTE[color_idx]
 
     def _ordinal_encode(self, o: int) -> str:
@@ -90,10 +76,10 @@ class SpaceState1DFormatter:
     def _ordinal_render(self, o: int) -> str:
         if self.symbol_mapping_override:
             display: str = self.symbol_mapping_override.get(o, self._ordinal_encode(o)) if self.show_symbols else ""
-            return f" {display} " if self.cell_padding else display
+            return f"{display:^{self.cell_padding}}" if self.cell_padding else display
         else:
             display: str = self._ordinal_encode(o) if self.show_symbols else ""
-            return f" {display} " if self.cell_padding else display
+            return f"{display:^{self.cell_padding}}" if self.cell_padding else display
 
     def __call__(self, s: SpaceState1D) -> Text:
         """Fast join using the pre-computed mapping. Also highlight specific vec matching highlight_cells_with_id."""
@@ -145,13 +131,14 @@ if __name__ == "__main__":
     from rich.console import Console
     system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space='AB')
     system.build_multiway_space_links = True
-    system.evolve(1000)
+    system.evolve(200)
 
     console = Console(width=1000)
     formatter = SpaceState1DFormatter()
     formatter.encode_using_property = 'id'
     formatter.style_using_property = 'id'
     formatter.encode_ordinals = True
+    formatter.cell_padding = 5
     formatter.styling = True
     # formatter.highlight_cells_with_id = {188: 'on black'}
 

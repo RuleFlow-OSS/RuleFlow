@@ -9,7 +9,7 @@ from core.engine import (
     DeltaCell
 )
 from core.topologies.nd_space import SpaceState1D as SpaceState
-from core.topologies.finder import VectorRegexSearch
+from core.topologies.tooling.finder import VectorRegexSearch
 import numpy as np
 finder: VectorRegexSearch = VectorRegexSearch()
 
@@ -45,6 +45,7 @@ if __name__ == "__main__":
     # System
     system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space='AB')
     system.evolve(20)
+    print(system.__str__())
 
     # Evolution Table
     # from core.topologies.prettier import SpaceState1DFormatter

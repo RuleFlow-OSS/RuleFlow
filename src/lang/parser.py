@@ -93,7 +93,8 @@ directive: "@" DIRECTIVE_KEY "(" [DIRECTIVE_VALUE] ");"
 
 def macro_directive(path: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """Macro (like importing, but simply dropping the src right into the ast) from a file or preset"""
-    from lang.bootstrapped.python import bootstrapped_py_parse  # import here to avoid cyclic errors
+    # import bootstrapped parsers here to avoid cyclic import errors
+    from lang.bootstrapped.python import bootstrapped_py_parse
     from lang.bootstrapped.wolfram import bootstrapped_wl_parse
     bootstrapped: dict[str, Callable] = {'.pflow': bootstrapped_py_parse, '.wpflow': bootstrapped_wl_parse}
     value: str | None = BUILTIN_FLOWS.get(path, None)

@@ -9,7 +9,7 @@ In the future, we may consider making the search_buffer branch-able (really, it 
 Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
 """
-from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self
+from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self, Callable
 from core.numlib import INF
 from core.signals import Signal
 from core.topologies.nd_space import SpaceState1D as SpaceState
@@ -23,13 +23,24 @@ from core.engine import (
 
 
 class Selector(NamedTuple):
-    type: Literal["literal", "regex", "range"]
-    selector: bytes | tuple[int, int]  # bytes are used for both literal and regex
+    type: Literal["literal", "regex", "range", "callable"]
+    selector: (
+            Sequence[int] | bytes | tuple[int, int]
+            |
+            Callable[[SpaceState], Iterator[tuple[int, int]]]
+    )
+    # Bytes are used for regex
+    # The callable is passed a SpaceState and returns span matches
 
 
 class Target(NamedTuple):
-    type: Literal["literal", "int"]
-    target: Sequence[int] | int  # Sequence[int] is for most operations, Int for operations such as inserting.
+    type: Literal["literal", None, "callable"]
+    target: (
+            Sequence[int] | None
+            |
+            Callable[[SpaceState, tuple[int, int]], Sequence[int]]
+    )
+    # The callable takes the SpaceState and match span (for context information) and returns the target sequence.
 
 
 class BaseRule(RuleABC):
@@ -59,11 +70,10 @@ class BaseRule(RuleABC):
         'life': 'lifespan',
     }
 
-    def __init__(self, selector: Sequence[Selector], target: Sequence[Target]):
+    def __init__(self, selector: Sequence[Selector], target: Target):
         super().__init__()
-        # Functionality Fields (you can have multiple selectors and multiple targets)
         self.selector: Sequence[Selector] = selector  # used by self.match()
-        self.target: Sequence[Target] = target  # used by self.apply()
+        self.target: Target = target  # used by self.apply()
 
         # Complex Functionality
         self.chain: list[BaseRule] = [self]  # so that multiple rules can be chained to this one. Each rule here is treated as though it is "self".
@@ -73,7 +83,6 @@ class BaseRule(RuleABC):
         # match() flags
         self.space_range: tuple[int, int] = (0, 1)  # the range of spaces that are matched
         self.match_range: tuple[int, int] = (0, 1)  # the range of matches if there are multiple matches
-        self.offset: int = 0  # the offset to the index that selectors return.
         self.cmp: Literal["both", "og", "this", "ignore"] = "ignore"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
 
         # apply() flags
@@ -116,8 +125,8 @@ class BaseRule(RuleABC):
             start2, end2 = m
             if (start1 < start2 < end1 or start1 < end2 < end1
                     or start2 < start1 < end2 or start2 < end1 < end2):
-                if self.crp == "this": conflicts.add(this_idx)
-                elif self.crp == "og": conflicts.add(og_idx)
+                if self.cmp == "this": conflicts.add(this_idx)
+                elif self.cmp == "og": conflicts.add(og_idx)
                 elif self.cmp == "both":
                     conflicts.add(this_idx)
                     conflicts.add(og_idx)
@@ -132,9 +141,7 @@ class BaseRule(RuleABC):
             return ()  # we do not run the rule outside the collective "self"
         out: list[RuleMatch] = []
         for i, space in enumerate(spaces):
-            if self.space_range[0] > i:
-                continue
-            if i >= self.space_range[1]:
+            if not self.space_range[0] <= i <= self.space_range[1]:
                 break
             chained: list[BaseRule] = []
             matches: list[tuple[int, int]] = []
@@ -144,18 +151,17 @@ class BaseRule(RuleABC):
                     continue
                 for pattern in self.selector:
                     finds: Iterator[tuple[int, int]]
-                    if pattern.type in ('literal', 'regex'):
-                        finds = space.vec.finditer(pattern.selector)  # FlowLang uses the Vec objects from the custom vec implementation for vec in the space states (look at the interpreter). These Vecs have builtin regex matching.
+                    if pattern.type == 'literal':
+                        pass
+                    elif pattern.type == 'regex':
+                        pass
                     elif pattern.type == 'range':
-                        # noinspection PyTypeChecker
                         finds = iter((pattern.selector,))
+                    elif pattern.type == 'callable':
+                        finds = pattern.selector(space)
                     else: continue
                     for j, span in enumerate(finds):
-                        if self.offset:
-                            span = (span[0] + self.offset, span[1] + self.offset)
-                        if self.match_range[0] > j:
-                            continue
-                        if j >= self.match_range[1]:
+                        if not self.match_range[0] <= j <= self.match_range[1]:
                             break
                         if self.cmp != 'ignore':
                             conflicts.update(self._conflict_detector(matches, span))
@@ -184,7 +190,7 @@ class BaseRule(RuleABC):
             new_cells.extend(delta_cell.new_cells)
         return DeltaCell(destroyed_cells, new_cells)
 
-    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int] | int | None) -> DeltaCell:
+    def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int] | None) -> DeltaCell:
         raise NotImplementedError('A subclass must implement the correct modifier (e.g. `space.substitute(selector, target)`)')
 
     # noinspection PyMethodFirstArgAssignment
@@ -205,11 +211,10 @@ class BaseRule(RuleABC):
             matches_bound: int = len(rule_match.matches) - 1
             for idx, selector in enumerate(rule_match.matches):  # a "run" over the matches to the space.
                 self: BaseRule = rule_match.metadata[idx]  # we need to treat each rule in the chain (specifically those with successful matches which are put in .metadata of the RuleMatch) as though they are "self"
-                if self.target:
-                    # noinspection PyUnresolvedReferences
-                    target: Sequence[int] | int = self.target[idx % len(self.target)].target  # so that multiple targets are looped over...
-                else:
-                    target: None = None
+                if self.target.type == 'callable':
+                    target: Sequence[int] = self.target.target(current_space, selector)
+                else:  # if target type is literal
+                    target: Sequence[int] | None = self.target.target
 
                 # handle the selector if it is a conflict
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:

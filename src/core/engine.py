@@ -1,6 +1,10 @@
 """core.engine
 This implements the necessary abstraction layer and protocols as well as logic flow necessary to
-evolve systems that can be causally tracked."""
+evolve systems that can be causally tracked.
+
+All printer `__str__()` implementations are primarily for debugging purposes; rendering implementation are in
+dedicated modules.
+"""
 from typing import Any, Sequence, NamedTuple, Iterator, cast, Hashable, Protocol, TypeVar, Generic, runtime_checkable
 from weakref import WeakKeyDictionary
 from abc import ABC, abstractmethod
@@ -238,7 +242,7 @@ class Event:
                     yield r, space_delta, cell_delta, space
 
     def __str__(self):
-        return '[' + ', '.join(str(space) for space in self.spaces) + ']'  # TODO remove this to a dedicated printer
+        return '[' + ', '.join(str(space) for space in self.spaces) + ']'
 
 
 class Flow:
@@ -395,8 +399,8 @@ class Flow:
             event_range: slice = slice(0, -1)
     ) -> tuple[list[tuple[int, int] | None], list[list[tuple[int, int]]]]:
         """Returns the branch indices of a cell's lifespan."""
-        destroyed_at: list[list[tuple[int, int]]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
         created_at: list[tuple[int, int]] = [None] * len(cell_ids)  # can only be created once
+        destroyed_at: list[list[tuple[int, int]]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
         for event_idx in range(*event_range.indices(len(self.events))):
             event: Event = self.events[event_idx]
             for space_idx, (dss, ds, dc, s) in enumerate(event.spaces_with_metadata):

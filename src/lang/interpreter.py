@@ -52,6 +52,7 @@ def interpret_target(selector_data: dict[str, Any]) -> Target:
     raise ValueError(f"Unknown target type: {t_type}")
 
 
+# TODO: reconsider the caller_selector parameter and add support for passing the finder function instances.
 def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any], caller_selector: SpecialSelector | None = None) -> Iterator[BaseRule]:
     """
     Iterates over the flat list of instructions, instantiates the correct
