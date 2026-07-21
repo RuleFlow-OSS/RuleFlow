@@ -10,6 +10,7 @@ class Inf(int):
 
     def __new__(cls):
         if not hasattr(cls, '_instance'):
+            # noinspection PyTypeChecker
             cls._instance = super().__new__(cls, maxsize)
         # noinspection PyUnresolvedReferences
         return cls._instance

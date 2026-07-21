@@ -14,6 +14,7 @@ from lang.bootstrapped.python import bootstrapped_py_parse
 from lang.implementation import (
     Selector, Target, BaseRule, SubstitutionRule, OverwriteRule, InsertionRule, DeletionRule
 )
+from lang.implementation import SelectorCallable, TargetCallable
 
 
 RULE_MAPPER: dict[str, type[BaseRule]] = {
@@ -24,32 +25,36 @@ RULE_MAPPER: dict[str, type[BaseRule]] = {
 }
 
 
-def interpret_selector(selector_data: dict[str, Any], caller_selector: SpecialSelector | None = None) -> Selector:
+def interpret_selector(selector_data: dict[str, Any], callables: dict[str, SelectorCallable]) -> Selector:
     """Converts AST selector data into a clean Selector NamedTuple."""
     s_type = selector_data["selector_type"]
     s_value = selector_data["value"]
-    if s_type == "literal":
+    if s_type == "literal":  # TODO: must determine which matching algorithm to use.
         return Selector(type=s_type, selector=s_value.replace('_', '.'))  # replace '_' with the regex wildcard '.' because we use regex for matching literals as well.
     elif s_type == "regex":
         return Selector(type=s_type, selector=s_value)
     elif s_type == "range":
         return Selector(type=s_type, selector=s_value)
-    elif s_type == "special_selector" and caller_selector:
-        return Selector(type='regex', selector=caller_selector(s_value))
-    raise ValueError(f"Unknown selector type: {s_type}")
+    elif s_type == "callable" and s_value in callables:
+        return Selector(type=s_type, selector=callables[s_value])
+    raise ValueError(f"Unknown selector of type '{s_type}' with value <{s_value}>.")
 
 
-def interpret_target(selector_data: dict[str, Any]) -> Target:
+def interpret_target(selector_data: dict[str, Any], callables: dict[str, TargetCallable]) -> Target:
     """Converts AST selector data into a clean Target NamedTuple."""
     t_type = selector_data["target_type"]
     t_value = selector_data["value"]
     if t_type == "literal":
         return Target(
             type=t_type,
-            target=t_value if isinstance(t_value, int) else tuple(Cell(c) for c in t_value)  # this really needs to be a tuple so that vec.Vec is able to cache it properly (tuple is hashable)
+            target=tuple(Cell(c) for c in t_value)  # this really needs to be a tuple so that vec.Vec is able to cache it properly (tuple is hashable)
         )
-    # add more conditionals if additional types are added to the terminal for target
-    raise ValueError(f"Unknown target type: {t_type}")
+    elif t_type == "callable" and t_value in callables:
+        return Target(
+            type=t_type,
+            target=callables[t_value]
+        )
+    raise ValueError(f"Unknown selector of type '{t_type}' with value <{t_value}>.")
 
 
 # TODO: reconsider the caller_selector parameter and add support for passing the finder function instances.

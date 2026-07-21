@@ -22,25 +22,19 @@ from core.engine import (
 )
 
 
+type SelectorCallable = Callable[[SpaceState], Iterator[tuple[int, int]]]  # The callable is passed a SpaceState and returns span matches
+type TargetCallable = Callable[[SpaceState, tuple[int, int]], Sequence[int]]  # The callable takes the SpaceState and match span (for context information) and returns the target sequence.
+
+
 class Selector(NamedTuple):
     type: Literal["literal", "regex", "range", "callable"]
-    selector: (
-            Sequence[int] | bytes | tuple[int, int]
-            |
-            Callable[[SpaceState], Iterator[tuple[int, int]]]
-    )
+    selector: Sequence[int] | bytes | tuple[int, int] | SelectorCallable
     # Bytes are used for regex
-    # The callable is passed a SpaceState and returns span matches
 
 
 class Target(NamedTuple):
-    type: Literal["literal", None, "callable"]
-    target: (
-            Sequence[int] | None
-            |
-            Callable[[SpaceState, tuple[int, int]], Sequence[int]]
-    )
-    # The callable takes the SpaceState and match span (for context information) and returns the target sequence.
+    type: Literal["literal", "callable"]
+    target: Sequence[int] | TargetCallable
 
 
 class BaseRule(RuleABC):
@@ -70,10 +64,10 @@ class BaseRule(RuleABC):
         'life': 'lifespan',
     }
 
-    def __init__(self, selector: Sequence[Selector], target: Target):
+    def __init__(self, selector: Sequence[Selector], target: Sequence[Target]):
         super().__init__()
         self.selector: Sequence[Selector] = selector  # used by self.match()
-        self.target: Target = target  # used by self.apply()
+        self.target: Sequence[Target] = target  # used by self.apply()  # we use Sequence because it fits our grammar more elegantly, even though it adds not functionality.
 
         # Complex Functionality
         self.chain: list[BaseRule] = [self]  # so that multiple rules can be chained to this one. Each rule here is treated as though it is "self".
@@ -211,10 +205,18 @@ class BaseRule(RuleABC):
             matches_bound: int = len(rule_match.matches) - 1
             for idx, selector in enumerate(rule_match.matches):  # a "run" over the matches to the space.
                 self: BaseRule = rule_match.metadata[idx]  # we need to treat each rule in the chain (specifically those with successful matches which are put in .metadata of the RuleMatch) as though they are "self"
-                if self.target.type == 'callable':
-                    target: Sequence[int] = self.target.target(current_space, selector)
-                else:  # if target type is literal
-                    target: Sequence[int] | None = self.target.target
+
+                # grab and process the target
+                target: Sequence[int] | None
+                if self.target:
+                    target_obj: Target = self.target[0]  # even though the grammar supports multiple targets, we only grab the first one to be unambiguous.
+                    if target_obj.type == 'callable':
+                        target: Sequence[int] = target_obj.target(current_space, selector)
+                    else:  # if target type is literal
+                        # noinspection PyTypeChecker
+                        target: Sequence[int] = target_obj.target
+                else:
+                    target: None = None
 
                 # handle the selector if it is a conflict
                 if self.parallel_execution_limit > 1 and self.crp != 'ignore' and idx in rule_match.conflicts:
