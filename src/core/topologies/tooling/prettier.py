@@ -5,8 +5,7 @@ Rich-based visualization wrapper for the Flow engine's SpaceState.
 TODO:
 - Add options for Nd rendering.
 """
-from string import ascii_uppercase, ascii_lowercase, digits
-from typing import Iterator, Sequence
+from typing import Iterator, Iterable
 from rich.text import Text
 from core.topologies.nd_space import SpaceState1D
 from core.topologies.tooling.rff_encoding import chr_rff
@@ -32,7 +31,7 @@ class SpaceState1DFormatter:
 
     def __init__(self) -> None:
         # this holds pre-initiated Text objects for every character
-        self.rich_cache: dict[int, Text] = {}
+        self.rich_cache: dict[int | tuple[int, int], Text] = {}
 
         # special modifiers
         self.highlight_cells_in_generation: dict[int, str] = {}
@@ -81,7 +80,7 @@ class SpaceState1DFormatter:
             display: str = self._ordinal_encode(o) if self.show_symbols else ""
             return f"{display:^{self.cell_padding}}" if self.cell_padding else display
 
-    def __call__(self, s: SpaceState1D) -> Text:
+    def __call__(self, s: SpaceState1D) -> Text:  # TODO: maybe cache this whole function
         """Fast join using the pre-computed mapping. Also highlight specific vec matching highlight_cells_with_id."""
         rm = self.rich_cache
         encode_using_property: str = self.encode_using_property
@@ -89,12 +88,11 @@ class SpaceState1DFormatter:
         pm: dict[str, int] = {'quanta': 0, 'generation': 1, 'id': 2}
         if self.highlight_cells_with_id or self.highlight_cells_in_generation:
             def iter_cells() -> Iterator[Text]:
-                for q, g, i in zip(s.vec.data, s.vec.generations, s.vec.ids):
-                    style: str = (self.highlight_cells_with_id.get(i, False) or
-                                  self.highlight_cells_in_generation.get(g, False))
-                    _ = (q, g, i)
-                    or_: int = _[pm[encode_using_property]]
-                    os_: int = _[pm[style_using_property]]
+                for p in zip(s.vec.data, s.vec.generations, s.vec.ids):
+                    style: str = (self.highlight_cells_with_id.get(p[2], '') or
+                                  self.highlight_cells_in_generation.get(p[1], ''))
+                    or_: int = p[pm[encode_using_property]]
+                    os_: int = p[pm[style_using_property]]
                     t: Text = rm.setdefault((or_, os_), Text(self._ordinal_render(or_),
                                                              style=self._ordinal_style(os_), end=''))
                     if style:
@@ -105,10 +103,9 @@ class SpaceState1DFormatter:
                         yield t
         else:
             def iter_cells() -> Iterator[Text]:
-                for q, g, i in zip(s.vec.data, s.vec.generations, s.vec.ids):
-                    _ = (q, g, i)
-                    or_: int = _[pm[encode_using_property]]
-                    os_: int = _[pm[style_using_property]]
+                for p in zip(s.vec.data, s.vec.generations, s.vec.ids):
+                    or_: int = p[pm[encode_using_property]]
+                    os_: int = p[pm[style_using_property]]
                     yield rm.setdefault((or_, os_), Text(self._ordinal_render(or_),
                                                          style=self._ordinal_style(os_), end=''))
         return Text(end='').join(iter_cells())
@@ -116,7 +113,7 @@ class SpaceState1DFormatter:
     def reset_cache(self):
         self.rich_cache.clear()
 
-    def convert_pure_sequence(self, seq: Sequence[int]) -> Text:
+    def convert_pure_sequence(self, seq: Iterable[int]) -> Text:
         """Utility method in case a given string needs to be styled the same as the space states (can be used in a ruleset printer for instance)."""
         rm = self.rich_cache
         return Text(end='').join(rm.get(c, Text(self._ordinal_render(c), style=self._ordinal_style(c), end='')) for c in seq)

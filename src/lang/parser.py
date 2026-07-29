@@ -54,18 +54,18 @@ instruction: selector* operator target* [flags]
 selector: regex_term
         | range_term
         | literal_term
-        | literal_seq_term
+        | literal_chars_term
         | fn_term
 
 target: literal_term
-      | literal_seq_term
+      | literal_chars_term
       | fn_term
 
 fn_term: SIMPLE_LITERAL "<" [/[^\>]+/] ">"
-literal_seq_term: "(" [/[^)]+/] ")"
+literal_term: "(" [/[^)]+/] ")"
+literal_chars_term: SIMPLE_LITERAL
 regex_term: STRING_LITERAL
 range_term: RANGE_LITERAL
-literal_term: SIMPLE_LITERAL
 
 operator: OP_OVERWRITE
         | OP_DELETE
@@ -188,6 +188,7 @@ class FlowLangTransformer(Transformer):
     def instruction_sequence(self, items):
         return items
 
+    # noinspection unresolved-references
     def instruction(self, items):
         out = {
             "type": 'instruction',
@@ -196,7 +197,7 @@ class FlowLangTransformer(Transformer):
             "target": [],
             "flags": _ if (_:=items[-1]) else {}
         }
-        for i in range(len(items) - 1):  # -1 to prevent looping over the flags dict (or None if there are no flags)
+        for i in range(len(items) - 1):  # -1 to prevent looping over the flags
             t: str = items[i]['type']
             if t == 'selector':
                 out[t].append(items[i])
@@ -227,13 +228,17 @@ class FlowLangTransformer(Transformer):
 
     # --- Terminals to Values (Unchanged) ---
     def regex_term(self, items):
-        return {"type": "regex", "value": items[0].value[1:-1]}
-
-    def literal_seq_term(self, items):
-        return {"type": "literal_seq", "value": items[0].value}
+        return {"type": "regex", "value": items[0].value[1:-1].encode()}
 
     def literal_term(self, items):
-        return {"type": "literal", "value": items[0].value}
+        return {
+            "type": "literal",
+            "value": tuple[int](ord(i) if isinstance(i, str) else i
+                                for i in eval(items[0].value))
+        }
+
+    def literal_chars_term(self, items):
+        return {"type": "literal_chars", "value": items[0].value.encode()}
 
     def range_term(self, items):
         # Parse [x,y] or [x]
@@ -310,6 +315,7 @@ if __name__ == "__main__":
         "AAB" AB -> ABA;
         fn<1, 2> -> (1, 2, 3, "A") -ttt;
         [1] --> AB;
+        (1, 2, -3, 4) --> AB;
     )
     """)
     pprint(t)

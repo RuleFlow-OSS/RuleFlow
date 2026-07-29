@@ -5,8 +5,7 @@ evolve systems that can be causally tracked.
 All printer `__str__()` implementations are primarily for debugging purposes; rendering implementation are in
 dedicated modules.
 """
-from typing import Any, Sequence, NamedTuple, Iterator, cast, Hashable, Protocol, TypeVar, Generic, runtime_checkable
-from weakref import WeakKeyDictionary
+from typing import Any, Sequence, NamedTuple, Iterator, cast, Hashable, Protocol, runtime_checkable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from core.signals import Signal
@@ -350,23 +349,12 @@ class Flow:
         # emit any signals
         self.on_evolved_n.emit(n_steps)
 
-    def _regress(self) -> None:
-        """Revert to the last event..."""
-        for ar in self.current_event.space_deltas:
-            for sd in ar.space_deltas:
-                for dc in sd.cell_deltas:
-                    for cell in dc.destroyed_cells:
-                        cell.destroyed_at = tuple(i for i in cell.destroyed_at if i != self.current_event_idx)
-        self.events.pop()
-
-        # emit any signals
-        self.on_undone_step.emit()
-
     def regress(self, n_steps: int) -> None:
         self._dirty_thread = False  # must reset
         for _ in range(n_steps):
             self.n_step_progress = (_ + 1) / n_steps
-            self._regress()
+            self.events.pop()
+            self.on_undone_step.emit()
             if self._dirty_thread:
                 break
         self.on_undone_n.emit(n_steps)
@@ -399,6 +387,7 @@ class Flow:
             event_range: slice = slice(0, -1)
     ) -> tuple[list[tuple[int, int] | None], list[list[tuple[int, int]]]]:
         """Returns the branch indices of a cell's lifespan."""
+        # noinspection bad-assignment
         created_at: list[tuple[int, int]] = [None] * len(cell_ids)  # can only be created once
         destroyed_at: list[list[tuple[int, int]]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
         for event_idx in range(*event_range.indices(len(self.events))):

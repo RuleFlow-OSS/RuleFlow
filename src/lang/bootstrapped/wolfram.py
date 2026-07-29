@@ -1,6 +1,5 @@
 import re
 from typing import Any, Optional
-import atexit
 from lang.parser import parse
 
 try:

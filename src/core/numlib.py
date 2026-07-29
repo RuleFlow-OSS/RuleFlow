@@ -8,11 +8,10 @@ from sys import maxsize
 class Inf(int):
     """Represents positive infinity (+inf)."""
 
+    # noinspection unresolved-references
     def __new__(cls):
         if not hasattr(cls, '_instance'):
-            # noinspection PyTypeChecker
             cls._instance = super().__new__(cls, maxsize)
-        # noinspection PyUnresolvedReferences
         return cls._instance
 
     def __repr__(self):

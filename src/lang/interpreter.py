@@ -2,8 +2,8 @@
 ==== FUTURE CONSIDERATIONS ====
 - For the 'init' directive, maybe use a save eval such as evalidate rather than the current eval().
 """
-from typing import Any, Iterator, Sequence, Callable, cast
-type SpecialSelector = Callable[[Any], str]
+from typing import Any, Iterator, Sequence, Callable, cast, Literal
+import numpy as np
 
 # Import the base engine classes
 from core.engine import Cell, Flow, RuleSet
@@ -17,113 +17,143 @@ from lang.implementation import (
 from lang.implementation import SelectorCallable, TargetCallable
 
 
-RULE_MAPPER: dict[str, type[BaseRule]] = {
-    "->": SubstitutionRule,
+RULE_MAP: dict[str, type[BaseRule]] = {
     "-->": OverwriteRule,
-    ">": InsertionRule,
     "><": DeletionRule,
+    "->": SubstitutionRule,
+    ">": InsertionRule,
 }
 
 
-def interpret_selector(selector_data: dict[str, Any], callables: dict[str, SelectorCallable]) -> Selector:
-    """Converts AST selector data into a clean Selector NamedTuple."""
-    s_type = selector_data["selector_type"]
-    s_value = selector_data["value"]
-    if s_type == "literal":  # TODO: must determine which matching algorithm to use.
-        return Selector(type=s_type, selector=s_value.replace('_', '.'))  # replace '_' with the regex wildcard '.' because we use regex for matching literals as well.
-    elif s_type == "regex":
-        return Selector(type=s_type, selector=s_value)
-    elif s_type == "range":
-        return Selector(type=s_type, selector=s_value)
-    elif s_type == "callable" and s_value in callables:
-        return Selector(type=s_type, selector=callables[s_value])
-    raise ValueError(f"Unknown selector of type '{s_type}' with value <{s_value}>.")
+class Interpreter:
+    """An interpreter that translates the transformed AST into working rule flow objects."""
+    def __init__(self):
+        self.convert_literal_selectors_to_regex_selectors: bool = True
+        self.selector_callables: dict[str, SelectorCallable] = {}
+        self.target_callables: dict[str, TargetCallable] = {}
+        self.directive_objects: dict[str, dict[str, Any]] = {}  # different sets of directives can be assigned to groups (can be used for different priorities for instance)
 
+    def set_selector_callables(self, callables: dict[str, SelectorCallable]) -> None:
+        self.selector_callables.update(callables)
 
-def interpret_target(selector_data: dict[str, Any], callables: dict[str, TargetCallable]) -> Target:
-    """Converts AST selector data into a clean Target NamedTuple."""
-    t_type = selector_data["target_type"]
-    t_value = selector_data["value"]
-    if t_type == "literal":
-        return Target(
-            type=t_type,
-            target=tuple(Cell(c) for c in t_value)  # this really needs to be a tuple so that vec.Vec is able to cache it properly (tuple is hashable)
-        )
-    elif t_type == "callable" and t_value in callables:
-        return Target(
-            type=t_type,
-            target=callables[t_value]
-        )
-    raise ValueError(f"Unknown selector of type '{t_type}' with value <{t_value}>.")
+    def set_target_callables(self, callables: dict[str, TargetCallable]) -> None:
+        self.target_callables.update(callables)
 
+    def unset_selector_callable(self, callable_name: str) -> SelectorCallable:
+        return self.selector_callables.pop(callable_name)
 
-# TODO: reconsider the caller_selector parameter and add support for passing the finder function instances.
-def interpret_instructions(instructions: Sequence[dict], global_flags: dict[str, Any], caller_selector: SpecialSelector | None = None) -> Iterator[BaseRule]:
-    """
-    Iterates over the flat list of instructions, instantiates the correct
-    Rule subclass, merges flags, and initializes fields.
-    """
-    for instruction in instructions:
-        operator = instruction['operator']['symbol']
-        RuleClass = RULE_MAPPER.get(operator)
-        if not RuleClass:
-            print(f"Warning: Unknown operator '{operator}'. Skipping rule.")
-            continue
+    def unset_target_callable(self, callable_name: str) -> TargetCallable:
+        return self.target_callables.pop(callable_name)
 
-        # Prepare Selectors and Targets
-        if not instruction['selector']:
-            print(f'Warning: All rules must have a selector. Skipping rule.')
-            continue
-        selectors = [interpret_selector(sd, caller_selector) for sd in instruction['selector']]
-        target = [interpret_target(td) for td in instruction['target']]
+    def set_directive_group(self, group_name: str, directive_objects: dict[str, Any]) -> None:
+        self.directive_objects[group_name] = directive_objects
 
-        # Instantiate Rule
-        rule_instance: BaseRule = RuleClass(selectors, target)
+    @staticmethod
+    def __convert_dot_wildcard_ord_to_numerical(a: np.ndarray) -> None:
+        """
+        ord('.') evaluates to 46.
+        This finds all elements equal to 46 and replaces them with -1.
+        """
+        a[a == ord('.')] = -1
 
-        # Merge and Assign Flags (Global < Rule/Group)
-        # Start with global defaults
-        final_flags = global_flags.copy()
-        rule_flags = instruction.get('flags', {})
-        final_flags.update(rule_flags)  # Apply rule/group flags (overwrites global)
-        # Apply flags to the rule instance
-        for key, value in final_flags.items():
-            # Map shorthand keys (e.g., 'pl' for 'parallel_processing_limit') to full attribute names
-            setattr(rule_instance, rule_instance.FLAG_ALIAS.get(key, key), value)
+    def interpret_selector(self, selector_data: dict[str, Any]) -> Selector:
+        """Converts AST selector data into a clean Selector NamedTuple."""
+        s_type: str = selector_data["selector_type"]
+        s_value = selector_data["value"]
 
-        yield rule_instance
-
-
-def interpret_directives(objects: dict[str, Any], directives: list[tuple[str, Any]]) -> dict[str, Any]:
-    """
-    Use the directives to modify (call) the `objects`.
-    """
-    returns: dict[str, Any] = {}
-    for path, args in directives:
-        parts = path.split('.')
-        root_name = parts[0]
-        root_obj = objects.get(root_name)
-        if not root_obj:
-            continue
-        current_obj = root_obj
-        try:
-            for part in parts[1:]:
-                current_obj = getattr(current_obj, part)
-        except AttributeError:
-            # noinspection PyUnboundLocalVariable
-            print(f"Error: Could not traverse '{part}' in path '{path}'.")
-            continue
-
-        # process arguments, call the function, store result
-        _args: list = []
-        _kwargs: dict = {}
-        for arg in args:
-            if isinstance(arg, str) and '=' in arg:
-                k, v = arg.split('=')
-                _kwargs[k] = eval(v)  # yes, I know this is not safe... buts it's very useful.
+        if s_type == "literal" and self.convert_literal_selectors_to_regex_selectors:
+            s_type = "regex"
+            s_value: Sequence[int]
+            s_value: bytes = bytes(s_value)
+        if s_type == "literal_chars":
+            s_value: bytes
+            if self.convert_literal_selectors_to_regex_selectors:
+                s_type = "regex"
             else:
-                _args.append(arg)
-        returns[path] = current_obj(*_args, **_kwargs)
-    return returns
+                s_type = "literal"
+                s_value: np.ndarray = np.frombuffer(s_value, dtype=np.int8).copy()
+                self.__convert_dot_wildcard_ord_to_numerical(s_value)
+
+        if s_type in ("literal", "regex", "range"):
+            return Selector(type=s_type, selector=s_value)
+        elif s_type == "callable" and s_value in self.selector_callables:
+            s_value: str
+            return Selector(type=s_type, selector=self.selector_callables[s_value])
+        raise ValueError(f"Unknown selector of type '{s_type}' with value {s_value}.")
+
+    def interpret_target(self, selector_data: dict[str, Any]) -> Target:
+        """Converts AST selector data into a clean Target NamedTuple."""
+        t_type: str = selector_data["target_type"]
+        t_value = selector_data["value"]
+        if t_type in ("literal", "literal_chars"):
+            if t_type == "literal_chars":
+                t_value: bytes
+                t_value: np.ndarray = np.frombuffer(t_value, dtype=np.int8).copy()
+                self.__convert_dot_wildcard_ord_to_numerical(t_value)
+            else:
+                t_value: Sequence[int]
+                t_value: np.ndarray = np.asarray(t_value)
+            return Target(type="literal", target=t_value)
+        elif t_type == "callable" and t_value in self.target_callables:
+            return Target(type="callable", target=self.target_callables[t_value])
+        raise ValueError(f"Unknown selector of type '{t_type}' with value {t_value}.")
+
+    def interpret_instructions(self, instructions: Sequence[dict], global_flags: dict[str, Any]) -> Iterator[BaseRule]:
+        """
+        Iterates over the flat list of instructions, instantiates the correct
+        Rule subclass, merges flags, and initializes fields.
+        """
+        for instruction in instructions:
+            operator = instruction['operator']['symbol']
+            RuleClass = RULE_MAP.get(operator)
+            if not RuleClass:
+                print(f"Warning: Unknown operator '{operator}'. Skipping rule.")
+                continue
+
+            # Prepare Selectors and Targets
+            if not instruction['selector']:
+                print(f'Warning: All rules must have a selector. Skipping rule.')
+                continue
+            selector = [self.interpret_selector(sd) for sd in instruction['selector']]
+            target = [self.interpret_target(td) for td in instruction['target']]
+
+            # Instantiate Rule
+            rule_instance: BaseRule = RuleClass(selector, target)
+
+            # Merge and Assign Flags (Global < Rule/Group)
+            final_flags = global_flags.copy()
+            rule_flags = instruction.get('flags', {})
+            final_flags.update(rule_flags)  # Apply rule/group flags (overwrites global)
+            # Apply flags to the rule instance
+            for key, value in final_flags.items():
+                # Map shorthand keys (e.g., 'pl' for 'parallel_processing_limit') to full attribute names
+                setattr(rule_instance, rule_instance.FLAG_ALIAS.get(key, key), value)
+
+            yield rule_instance
+
+    def interpret_directives(self, directives: list[tuple[str, Any]], group_name: str) -> dict[str, Any]:
+        """
+        Use the directives to modify (call) the `objects`.
+        """
+        objects: dict[str, Any] = self.directive_objects[group_name]
+        results: dict[str, Any] = {}
+        for path, args in directives:
+            parts = path.split('.')
+            root_name = parts[0]
+            root_obj = objects.get(root_name)
+            if not root_obj:
+                continue
+            current_obj = root_obj
+            try:
+                for part in parts[1:]:
+                    current_obj = getattr(current_obj, part)
+            except AttributeError:
+                # noinspection unbound-local-variable
+                print(f"Error: Could not traverse '{part}' in path '{path}'.")
+                continue
+            # noinspection calling-non-callable
+            results[path] = current_obj(*args[0], **args[1])
+        return results
 
 
 class FlowLangBase(Flow):
@@ -141,10 +171,12 @@ class FlowLangBase(Flow):
 
 class FlowLang(FlowLangBase):
     """The main interpreter object, it is what actually runs any given code."""
+    def __init__(self):
+        super().__init__()
+        # TODO: set all the stateful helper APIs here such as Vector Classes and Interpreters
 
-    def interpret(self, src: str, *args,
-                  bootstrapped: bool = False, **kwargs) -> None:
-        self.ast: dict[str, Any] = bootstrapped_py_parse(src, *args, **kwargs) if bootstrapped else parse(src)  # a bunch of stupid casting due to the Lark.parse() hinting at Tree[Token] return instead of what the transformer returns.
+    def interpret(self, src: str, *args, bootstrapped: bool = False, **kwargs) -> None:
+        self.ast: dict[str, Any] = bootstrapped_py_parse(src, *args, **kwargs) if bootstrapped else parse(src)
         r: dict[str, Any] = interpret_directives(
             {
                 'init': lambda *a: map(eval, map(str, a)),  # used to set the initial universe conditions.
@@ -222,7 +254,6 @@ class FlowLang(FlowLangBase):
     def regress(self, n_steps: int) -> None:
         super().regress(n_steps)
         for space in self.current_event.spaces:  # we must remember to refresh the search buffer if undoing anything...
-            # noinspection PyUnresolvedReferences
             space.cells.refresh_search_buffer()
 
     def clear_evolution(self) -> None:
@@ -233,40 +264,59 @@ class FlowLang(FlowLangBase):
 
 
 if __name__ == "__main__":
-    import psutil
-    import os
-    import gc
-    import timeit
-
-    def get_mem():
-        """Returns current resident set size in MB."""
-        process = psutil.Process(os.getpid())
-        return process.memory_info().rss / 1024 / 1024
-
-    gc.collect()
-    mem_start = get_mem()
-
-    # Run Simulation
-    code = """
-    // @mem(TrieVec);
-    @init("AB");
-    ABA -> AAB;
-    A -> ABA;
-    
-    // ==== 4-D network ====
-    // BA -> AB;
-    // BC -> ACB;
-    // A -> ACB;
-    """
-    flow = FlowLang(code)
-    time = timeit.timeit(lambda: flow.evolve(18), number=1)
-
-    mem_end = get_mem()
-    print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")
-    print(f"Total time spent: {time:.2f} seconds")
+    # import psutil
+    # import os
+    # import gc
+    # import timeit
     #
-    flow.print()
+    # def get_mem():
+    #     """Returns current resident set size in MB."""
+    #     process = psutil.Process(os.getpid())
+    #     return process.memory_info().rss / 1024 / 1024
+    #
+    # gc.collect()
+    # mem_start = get_mem()
+    #
+    # # Run Simulation
+    # code = """
+    # // @mem(TrieVec);
+    # @init("AB");
+    # ABA -> AAB;
+    # A -> ABA;
+    #
+    # // ==== 4-D network ====
+    # // BA -> AB;
+    # // BC -> ACB;
+    # // A -> ACB;
+    # """
+    # flow = FlowLang(code)
+    # time = timeit.timeit(lambda: flow.evolve(18), number=1)
+    #
+    # mem_end = get_mem()
+    # print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")
+    # print(f"Total time spent: {time:.2f} seconds")
+    # flow.print()
     # pprint([r for r in flow.rule_set.rules])  # print the rule objects
-    # from core.graph import CausalGraph
-    # g = CausalGraph(flow)
-    # g.render_in_browser()
+
+    from pprint import pprint
+    code = """
+    # @mem(TrieVec);
+    @test(1, 2, 3, t=2);
+    ABA -> AAB;
+    A. -> A.A;
+
+    # ==== 4-D network ====
+    # BA -> AB;
+    # BC -> ACB;
+    # A -> ACB;
+    """
+    ast: dict[str, Any] = parse(code)
+    pprint(ast)
+
+    i = Interpreter()
+    rules = tuple(i.interpret_instructions(ast['instructions'], ast['global_flags']))
+    pprint(rules)
+
+    i.set_directive_group('inits', {'test': lambda *a, **k: (a, k)})
+    directive_results = i.interpret_directives(ast['directives'], 'inits')
+    pprint(directive_results)

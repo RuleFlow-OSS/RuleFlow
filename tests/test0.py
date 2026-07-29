@@ -19,3 +19,10 @@
 
 # Print Test
 # print(f'{'':^2}')
+import numpy as np
+ascii = r"""!"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~"""
+codec = 'utf_8'
+dtype = np.uint8
+a = np.frombuffer(ascii.encode(codec), dtype=dtype)
+print(a)
+print(a.tobytes())

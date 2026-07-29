@@ -128,7 +128,7 @@ class BaseRule(RuleABC):
                     continue
         return conflicts
 
-    # noinspection PyMethodFirstArgAssignment
+    # noinspection method-first-arg-assignment
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
         top_self: Self = self  # for og reference when we loop through self (comment out to show a great bug example when two universes don't evolve in parallel)
         if self.is_in_chain:
@@ -154,6 +154,7 @@ class BaseRule(RuleABC):
                     elif pattern.type == 'callable':
                         finds = pattern.selector(space)
                     else: continue
+                    # noinspection unbound-local-variable
                     for j, span in enumerate(finds):
                         if not self.match_range[0] <= j <= self.match_range[1]:
                             break

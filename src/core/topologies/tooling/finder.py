@@ -113,12 +113,13 @@ class VectorRegexSearch:
 
         # memoryview creates an O(1) non-copying view into the numpy array's contiguous memory
         # Python's `re` and `regex` libraries can search buffer-protocol objects natively.
-        buffer_view: memoryview[int] = memoryview(search_buffer)
+        buffer_view = memoryview[int](search_buffer)
         return compiled_pattern.finditer(buffer_view, *self._find_args[0], **self._find_args[1])
 
 
 # ================================ Literal Sub-Vector Search ================================
 type SearchBackend = Literal['numpy', 'c_bytes', 'kmp', 'rabin_karp']
+
 
 @njit
 def _kmp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool):
@@ -211,9 +212,31 @@ def _rabin_karp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping
         i += 1
 
 
+@njit
+def _wildcard_naive_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool):
+    """JIT-compiled naive fallback for KMP and Rabin-Karp when a -1 wildcard is present."""
+    p_len: int = len(pattern)
+    b_len: int = len(search_buffer)
+
+    i: int = 0
+    while i <= b_len - p_len:
+        match: bool = True
+        for j in range(p_len):
+            if pattern[j] != -1 and pattern[j] != search_buffer[i + j]:
+                match = False
+                break
+
+        if match:
+            yield i
+            if not overlapping:
+                i += p_len
+                continue
+        i += 1
+
+
 class VectorLiteralSearch:
     """
-    For highly optimized exact sub-vector matches.
+    For highly optimized exact sub-vector matches. Supports -1 as a wildcard.
     Only supports the fastest zero-copy NumPy heuristics and C-level memory implementations.
     """
 
@@ -260,8 +283,8 @@ class VectorLiteralSearch:
     def _search_numpy(self, pattern: np.ndarray, search_buffer: np.ndarray) -> Iterator[tuple[int, int]]:
         """
         Optimized NumPy heuristic (Zero-Copy).
-        Filters candidates by first/last elements via np.nonzero before checking full windows.
-        Extremely fast for generalized data (uint64, float64) where elements aren't heavily repeated.
+        Dynamically filters candidates by first/last non-wildcard elements via np.nonzero
+        before checking full windows.
         """
         p_len: int = len(pattern)
         b_len: int = len(search_buffer)
@@ -269,30 +292,62 @@ class VectorLiteralSearch:
         if p_len > b_len or p_len == 0:
             return
 
-        # Fast path for single element search
-        if p_len == 1:
-            for idx in np.nonzero(search_buffer == pattern[0])[0]:
-                yield int(idx), int(idx + 1)
+        wildcard_mask = (pattern == -1)
+        has_wildcard = bool(wildcard_mask.any())
+
+        # Fast path if the pattern is entirely wildcards
+        if has_wildcard and wildcard_mask.all():
+            last_end: int = -1
+            for idx in range(b_len - p_len + 1):
+                if not self.overlapping and idx < last_end:
+                    continue
+                yield int(idx), int(idx + p_len)
+                last_end = idx + p_len
             return
 
-        # 1. Filter by first element matches
-        first_elem_matches = np.nonzero(search_buffer[:b_len - p_len + 1] == pattern[0])[0]
-        if len(first_elem_matches) == 0:
-            return
+        # Find the best anchors to filter by (first and last non-wildcard elements)
+        if has_wildcard:
+            non_wildcards = np.nonzero(np.logical_not(wildcard_mask))[0]
+            first_fixed_idx = int(non_wildcards[0])
+            last_fixed_idx = int(non_wildcards[-1])
+        else:
+            first_fixed_idx = 0
+            last_fixed_idx = p_len - 1
 
-        # 2. Filter remaining candidates by last element
-        last_elem_offsets = first_elem_matches + (p_len - 1)
-        last_elem_matches = search_buffer[last_elem_offsets] == pattern[-1]
-        candidates = first_elem_matches[last_elem_matches]
+        first_val = pattern[first_fixed_idx]
+        last_val = pattern[last_fixed_idx]
+
+        # 1. Filter by first fixed element
+        first_elem_matches = np.nonzero(search_buffer[:b_len - p_len + 1 + first_fixed_idx] == first_val)[0]
+
+        # Shift candidate indices back to the start of the pattern window
+        candidates = first_elem_matches - first_fixed_idx
+
+        # Filter out candidates that would cause out-of-bounds reading
+        valid_bounds = (candidates >= 0) & (candidates <= b_len - p_len)
+        candidates = candidates[valid_bounds]
 
         if len(candidates) == 0:
             return
 
-        # 3. Validate surviving candidates utilizing sliding window view (memory safe here as candidates are few)
+        # 2. Filter remaining candidates by last fixed element
+        if first_fixed_idx != last_fixed_idx:
+            last_elem_offsets = candidates + last_fixed_idx
+            last_elem_matches = search_buffer[last_elem_offsets] == last_val
+            candidates = candidates[last_elem_matches]
+
+        if len(candidates) == 0:
+            return
+
+        # 3. Validate surviving candidates utilizing sliding window view
         windows = sliding_window_view(search_buffer, p_len)
         candidate_windows = windows[candidates]
 
-        valid_mask = (candidate_windows == pattern).all(axis=1)
+        if has_wildcard:
+            valid_mask = ((candidate_windows == pattern) | wildcard_mask).all(axis=1)
+        else:
+            valid_mask = (candidate_windows == pattern).all(axis=1)
+
         final_matches = candidates[valid_mask]
 
         # 4. Handle yielding and overlap filtering
@@ -306,7 +361,6 @@ class VectorLiteralSearch:
     def _search_c_bytes(self, pattern: np.ndarray, search_buffer: np.ndarray) -> Iterator[tuple[int, int]]:
         """
         Leverages Python's native C string matching (Boyer-Moore-Horspool).
-        Generalizes to large alphabets (e.g. uint64) by calculating byte alignments.
         *Note: Has a memory overhead of creating a byte representation of the array.*
         """
         p_len: int = len(pattern)
@@ -327,7 +381,6 @@ class VectorLiteralSearch:
 
             # CRITICAL: Since we are matching raw memory bytes, a sequence might accidentally
             # match across the boundaries of two large integers (misalignment).
-            # We must ensure the matched byte index modulo the itemsize is exactly 0.
             if idx % itemsize == 0:
                 array_idx = idx // itemsize
                 yield array_idx, array_idx + p_len
@@ -342,16 +395,26 @@ class VectorLiteralSearch:
         p_len: int = len(pattern)
         if p_len > len(search_buffer) or p_len == 0:
             return
-        for start_idx in _kmp_core(pattern, search_buffer, self.overlapping):
-            yield int(start_idx), int(start_idx + p_len)
+
+        if (pattern == -1).any():
+            for start_idx in _wildcard_naive_core(pattern, search_buffer, self.overlapping):
+                yield int(start_idx), int(start_idx + p_len)
+        else:
+            for start_idx in _kmp_core(pattern, search_buffer, self.overlapping):
+                yield int(start_idx), int(start_idx + p_len)
 
     def _search_rabin_karp(self, pattern: np.ndarray, search_buffer: np.ndarray) -> Iterator[tuple[int, int]]:
         """Rabin-Karp rolling hash algorithm, accelerated by Numba JIT when available."""
         p_len: int = len(pattern)
         if p_len > len(search_buffer) or p_len == 0:
             return
-        for start_idx in _rabin_karp_core(pattern, search_buffer, self.overlapping):
-            yield int(start_idx), int(start_idx + p_len)
+
+        if (pattern == -1).any():
+            for start_idx in _wildcard_naive_core(pattern, search_buffer, self.overlapping):
+                yield int(start_idx), int(start_idx + p_len)
+        else:
+            for start_idx in _rabin_karp_core(pattern, search_buffer, self.overlapping):
+                yield int(start_idx), int(start_idx + p_len)
 
     def __call__(self, pattern: PureVector, search_buffer: PureVector) -> Iterator[tuple[int, int]]:
         """
@@ -367,16 +430,22 @@ class VectorLiteralSearch:
         if pattern.dtype != search_buffer.dtype:
             pattern = pattern.astype(search_buffer.dtype)
 
+        has_wildcard = (pattern == -1).any()
+
         if self.backend == 'numpy':
             return self._search_numpy(pattern, search_buffer)
         elif self.backend == 'c_bytes':
+            if has_wildcard:
+                # c_bytes mathematically cannot support wildcards at the byte-alignment level; fallback to numpy
+                return self._search_numpy(pattern, search_buffer)
             return self._search_c_bytes(pattern, search_buffer)
         elif self.backend == 'kmp':
             return self._search_kmp(pattern, search_buffer)
         elif self.backend == 'rabin_karp':
             return self._search_rabin_karp(pattern, search_buffer)
         else:
-            raise ValueError(f"Unknown fast backend requested: {self.backend}. Use 'numpy', 'c_bytes', 'kmp', or 'rabin_karp'.")
+            raise ValueError(
+                f"Unknown fast backend requested: {self.backend}. Use 'numpy', 'c_bytes', 'kmp', or 'rabin_karp'.")
 
 
 class VectorSymbolicAutomatonSearch:

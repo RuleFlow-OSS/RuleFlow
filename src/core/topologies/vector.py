@@ -4,7 +4,7 @@
 - The API for all vector topologies should be cross-compatible.
 For any given vector implementation, the client code should continue to work.
 """
-from typing import MutableSequence, Sequence, Literal, overload, NamedTuple, Iterator, Callable, Any
+from typing import MutableSequence, Sequence, overload, NamedTuple, Iterator
 from copy import copy
 import numpy as np
 type PureVector = np.ndarray[tuple[int]]
@@ -40,6 +40,7 @@ class Vector(MutableSequence):
     @overload
     def __getitem__(self, index: int) -> int: ...
 
+    # noinspection method-overriding
     @overload
     def __getitem__(self, index: slice) -> PureVector: ...
 
@@ -49,6 +50,7 @@ class Vector(MutableSequence):
     @overload
     def __setitem__(self, index: int, value: int) -> None: ...
 
+    # noinspection method-overriding
     @overload
     def __setitem__(self, index: slice, value: Sequence[int]) -> None: ...
 
@@ -214,6 +216,7 @@ class CellVector(MutableSequence):
     @overload
     def __getitem__(self, index: int) -> int: ...
 
+    # noinspection method-overriding
     @overload
     def __getitem__(self, index: slice) -> PureVector: ...
 
@@ -223,6 +226,7 @@ class CellVector(MutableSequence):
     @overload
     def __setitem__(self, index: int, value: int) -> None: ...
 
+    # noinspection method-overriding
     @overload
     def __setitem__(self, index: slice, value: Sequence[int]) -> None: ...
 
