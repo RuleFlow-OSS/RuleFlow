@@ -5,7 +5,8 @@ evolve systems that can be causally tracked.
 All printer `__str__()` implementations are primarily for debugging purposes; rendering implementation are in
 dedicated modules.
 """
-from typing import Any, Sequence, NamedTuple, Iterator, cast, Hashable, Protocol, runtime_checkable
+from typing import Any, NamedTuple, cast, Protocol, runtime_checkable
+from collections.abc import Sequence, Iterator, Hashable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from core.signals import Signal
@@ -387,7 +388,6 @@ class Flow:
             event_range: slice = slice(0, -1)
     ) -> tuple[list[tuple[int, int] | None], list[list[tuple[int, int]]]]:
         """Returns the branch indices of a cell's lifespan."""
-        # noinspection bad-assignment
         created_at: list[tuple[int, int]] = [None] * len(cell_ids)  # can only be created once
         destroyed_at: list[list[tuple[int, int]]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
         for event_idx in range(*event_range.indices(len(self.events))):

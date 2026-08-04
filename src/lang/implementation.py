@@ -128,7 +128,6 @@ class BaseRule(RuleABC):
                     continue
         return conflicts
 
-    # noinspection method-first-arg-assignment
     def match(self, spaces: Sequence[SpaceState]) -> Sequence[RuleMatch]:
         top_self: Self = self  # for og reference when we loop through self (comment out to show a great bug example when two universes don't evolve in parallel)
         if self.is_in_chain:
@@ -154,7 +153,6 @@ class BaseRule(RuleABC):
                     elif pattern.type == 'callable':
                         finds = pattern.selector(space)
                     else: continue
-                    # noinspection unbound-local-variable
                     for j, span in enumerate(finds):
                         if not self.match_range[0] <= j <= self.match_range[1]:
                             break
@@ -188,7 +186,6 @@ class BaseRule(RuleABC):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int] | None) -> DeltaCell:
         raise NotImplementedError('A subclass must implement the correct modifier (e.g. `space.substitute(selector, target)`)')
 
-    # noinspection PyMethodFirstArgAssignment
     def apply(self, rule_matches: Sequence[RuleMatch]) -> Sequence[DeltaSpace]:
         top_self: Self = self  # because self is reassigned when self has a chain of followers.
         modified_spaces: list[DeltaSpace] = []
@@ -214,7 +211,6 @@ class BaseRule(RuleABC):
                     if target_obj.type == 'callable':
                         target: Sequence[int] = target_obj.target(current_space, selector)
                     else:  # if target type is literal
-                        # noinspection PyTypeChecker
                         target: Sequence[int] = target_obj.target
                 else:
                     target: None = None

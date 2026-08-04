@@ -4,7 +4,7 @@ try:
     import regex
 except ImportError:
     regex = re
-from typing import Literal, Iterator, Any, Sequence
+from typing import Literal, Iterator, Any, Sequence, Union
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 try:
@@ -26,12 +26,14 @@ type PureVector = np.ndarray[tuple[int]]
 
 
 # ================================ Regex Vector Search ================================
+type Pattern = Union[re.Pattern, regex.Pattern]
+
+
 class VectorRegexSearch:
     """Implements a regex finding algorithm on pure numpy vectors."""
 
     def __init__(
-        self,
-        backend: Literal['re', 'regex'] = 'regex',
+        self, backend: Literal['re', 'regex'] = 'regex',
         pattern_encoding: str = 'ascii',
         use_pattern_cache: bool = True,
         pattern_cache_size: int = 1024
@@ -83,10 +85,9 @@ class VectorRegexSearch:
         elif isinstance(p, bytearray | Sequence):
             return np.array(p).tobytes()
         else:
-            p: bytes
             return p
 
-    def _retrieve_pattern(self, p: bytes) -> re.Pattern[bytes]:
+    def _retrieve_pattern(self, p: bytes) -> Pattern:
         """Retrieves or compiles the pattern, utilizing the instance cache if enabled."""
         if not self._use_pattern_cache:
             return self.regex_module.compile(
@@ -109,7 +110,7 @@ class VectorRegexSearch:
         Executes the regex finditer functionality. If the search_buffer is a np.ndarray, it must be c contiguous.
         Treats the array memory directly as a byte buffer.
         """
-        compiled_pattern: re.Pattern[bytes] = self._retrieve_pattern(pattern)
+        compiled_pattern: Pattern = self._retrieve_pattern(pattern)
 
         # memoryview creates an O(1) non-copying view into the numpy array's contiguous memory
         # Python's `re` and `regex` libraries can search buffer-protocol objects natively.
@@ -122,7 +123,7 @@ type SearchBackend = Literal['numpy', 'c_bytes', 'kmp', 'rabin_karp']
 
 
 @njit
-def _kmp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool):
+def _kmp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool) -> Iterator[int]:
     """JIT-compiled core loop for the KMP algorithm."""
     p_len: int = len(pattern)
     b_len: int = len(search_buffer)
@@ -164,7 +165,7 @@ def _kmp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool)
 
 
 @njit
-def _rabin_karp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool):
+def _rabin_karp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool) -> Iterator[int]:
     """JIT-compiled core loop for the Rabin-Karp algorithm."""
     p_len: int = len(pattern)
     b_len: int = len(search_buffer)
@@ -213,7 +214,7 @@ def _rabin_karp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping
 
 
 @njit
-def _wildcard_naive_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool):
+def _wildcard_naive_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool) -> Iterator[int]:
     """JIT-compiled naive fallback for KMP and Rabin-Karp when a -1 wildcard is present."""
     p_len: int = len(pattern)
     b_len: int = len(search_buffer)
@@ -301,7 +302,7 @@ class VectorLiteralSearch:
             for idx in range(b_len - p_len + 1):
                 if not self.overlapping and idx < last_end:
                     continue
-                yield int(idx), int(idx + p_len)
+                yield idx, idx + p_len
                 last_end = idx + p_len
             return
 

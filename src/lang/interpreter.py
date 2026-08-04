@@ -131,7 +131,7 @@ class Interpreter:
 
             yield rule_instance
 
-    def interpret_directives(self, directives: list[tuple[str, Any]], group_name: str) -> dict[str, Any]:
+    def interpret_directives(self, group_name: str, directives: list[tuple[str, Any]]) -> dict[str, Any]:
         """
         Use the directives to modify (call) the `objects`.
         """
@@ -148,10 +148,8 @@ class Interpreter:
                 for part in parts[1:]:
                     current_obj = getattr(current_obj, part)
             except AttributeError:
-                # noinspection unbound-local-variable
                 print(f"Error: Could not traverse '{part}' in path '{path}'.")
                 continue
-            # noinspection calling-non-callable
             results[path] = current_obj(*args[0], **args[1])
         return results
 
@@ -175,9 +173,10 @@ class FlowLang(FlowLangBase):
         super().__init__()
         # TODO: set all the stateful helper APIs here such as Vector Classes and Interpreters
 
-    def interpret(self, src: str, *args, bootstrapped: bool = False, **kwargs) -> None:
-        self.ast: dict[str, Any] = bootstrapped_py_parse(src, *args, **kwargs) if bootstrapped else parse(src)
-        r: dict[str, Any] = interpret_directives(
+        # Set up the interpreter
+        self.interpreter = Interpreter()
+        self.interpreter.set_directive_group(
+            'initializer',
             {
                 'init': lambda *a: map(eval, map(str, a)),  # used to set the initial universe conditions.
                 # We map str to the args because the parser.py auto-converts number characters (and others) to their actual types... str() converts these back.
@@ -191,33 +190,38 @@ class FlowLang(FlowLangBase):
                 'regex_compiler_args': vec.set_regex_compiler_args,
                 'regex_find_args': vec.set_regex_find_args,
                 'search_buffer': vec.enable_search_buffer
-            },
-            self.ast['directives']
+            }
         )
-        self.set_ruleset(RuleSet(
-            list(
-                interpret_instructions(
-                    self.ast['instructions'],
-                    self.ast['global_flags']
-                )
+        self.interpreter.set_directive_group(
+            'program',
+            {
+                'evolve': self.evolve,
+                'regress': self.regress,
+                'clear': self.clear_evolution,
+                'merge': self.__merge_group,
+                'compress': self.__compress_group
+            }
+        )
+
+    def interpret(self, src: str, *args, bootstrapped: bool = False, **kwargs) -> None:
+        self.ast: dict[str, Any] = bootstrapped_py_parse(src, *args, **kwargs) if bootstrapped else parse(src)
+        initializer_directive_responses: dict[str, Any] = self.interpreter.interpret_directives("initializer", self.ast['directives'])
+        rule_objects: list[BaseRule] = list(
+            self.interpreter.interpret_instructions(
+                self.ast['instructions'],
+                self.ast['global_flags']
             )
-        ))
-        Vec: type[vec.Vec] = getattr(vec, r.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
-        if init:=r.get('init', None):
+        )
+        self.set_ruleset(RuleSet(rule_objects))
+        Vec: type[vec.Vec] = getattr(vec, initializer_directive_responses.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
+        if init:=initializer_directive_responses.get('init', None):
             init = tuple(init)
-            # noinspection PyUnresolvedReferences
             if not self.events or self._last_init_space != init:
                 self._last_init_space = init
                 self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in init])
 
         # after instantiations
-        interpret_directives({
-            'evolve': self.evolve,
-            'regress': self.regress,
-            'clear': self.clear_evolution,
-            'merge': self.__merge_group,
-            'compress': self.__compress_group
-        }, self.ast['directives'])
+        self.interpreter.interpret_directives("program", self.ast['directives'])
 
     def __merge_group(self, *identifiers: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
@@ -238,7 +242,7 @@ class FlowLang(FlowLangBase):
         rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.ruleset.rules)
                                  if any(i in rule.group for i in identifiers) and not rule.disabled]
         for rule in rules:  # If any rule makes no changes, disable it.
-            if type(rule) != OverwriteRule:  # we only care about this type of rule... for obvious reasons
+            if isinstance(rule, OverwriteRule):  # we only care about this type of rule... for obvious reasons
                 continue
             rule_is_active: bool = False
             for target in rule.target:
@@ -259,7 +263,6 @@ class FlowLang(FlowLangBase):
     def clear_evolution(self) -> None:
         super().clear_evolution()
         for space in self.current_event.spaces:  # we must remember to refresh the search buffer if clearing anything...
-            # noinspection PyUnresolvedReferences
             space.cells.refresh_search_buffer()
 
 

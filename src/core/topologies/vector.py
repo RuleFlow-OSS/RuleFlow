@@ -40,7 +40,6 @@ class Vector(MutableSequence):
     @overload
     def __getitem__(self, index: int) -> int: ...
 
-    # noinspection method-overriding
     @overload
     def __getitem__(self, index: slice) -> PureVector: ...
 
@@ -50,7 +49,6 @@ class Vector(MutableSequence):
     @overload
     def __setitem__(self, index: int, value: int) -> None: ...
 
-    # noinspection method-overriding
     @overload
     def __setitem__(self, index: slice, value: Sequence[int]) -> None: ...
 
@@ -128,11 +126,9 @@ class Vector(MutableSequence):
         self[index:index] = (value,)
 
     def __str__(self) -> str:
-        # noinspection PyStringConversionWithoutDunderMethod
         return str(self.logical_data)
 
     def __repr__(self) -> str:
-        # noinspection PyStringConversionWithoutDunderMethod
         return f"{self.__class__.__name__}({self.logical_data})"
 
 
@@ -216,7 +212,6 @@ class CellVector(MutableSequence):
     @overload
     def __getitem__(self, index: int) -> int: ...
 
-    # noinspection method-overriding
     @overload
     def __getitem__(self, index: slice) -> PureVector: ...
 
@@ -226,7 +221,6 @@ class CellVector(MutableSequence):
     @overload
     def __setitem__(self, index: int, value: int) -> None: ...
 
-    # noinspection method-overriding
     @overload
     def __setitem__(self, index: slice, value: Sequence[int]) -> None: ...
 

@@ -126,7 +126,6 @@ class ModalDialog(ModalScreen[dict]):
         self.dismiss(results)
 
     def on_input_submitted(self):
-        # noinspection PyUnresolvedReferences
         self.query_one("#modal-dialog-submit-btn").press()
 
 
@@ -167,7 +166,6 @@ class WelcomeScreen(Screen):
                 self.notify('Please enter a valid path to a directory.', severity='error')
                 return
             try:
-                # noinspection PyUnresolvedReferences
                 self.query_one("#recents-list").add_option(Option(f'{name} [grey]({path})[/grey]', name))
                 config.RecentProjects.add(name, path)
                 self.notify(f"Loaded project at: {path}")
@@ -232,7 +230,6 @@ class EditorInstance(Widget):
         ("ctrl+f2", "toggle_controls", "Toggle Controls"),
     ]
 
-    # noinspection PyUnresolvedReferences
     def action_run(self):
         """Action to press the run button upon this action..."""
         try: self.query_one('#toolbar-btn-run').press()
@@ -315,7 +312,6 @@ class EditorInstance(Widget):
                 self.workspace_toolbar: Horizontal = wt  # this way plugins can add buttons or widgets here
                 self.open_file_label = Label(self.MODEL.file_path.name, classes='gray')
                 yield self.open_file_label
-                # noinspection PyUnresolvedReferences
                 if (_:=self.screen.selected_variant) != 'main':
                     yield Label(f' | {_}', classes='gray')
                 yield Spacer()
@@ -542,7 +538,6 @@ class Main(App):
             self.exit()
         def handle_modal_result(result: dict):
             if result["pressed_button"] == "Yes":
-                # noinspection PyUnresolvedReferences
                 self.screen.action_save_file()
                 if result["checkbox"]["save_config"]["value"]:
                     self.sig_exiting_studio.emit()

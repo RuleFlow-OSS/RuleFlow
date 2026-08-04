@@ -48,15 +48,15 @@ if __name__ == "__main__":
     print(system.__str__())
 
     # Evolution Table
-    # from core.topologies.prettier import SpaceState1DFormatter
-    # from rich.console import Console
-    # formatter = SpaceState1DFormatter()
-    # formatter.config(show_symbols=False)
-    # # formatter.highlight_cells_with_id = {6, 28}
-    # console = Console(width=1000)
-    # for event in system.events:
-    #     console.print(formatter.convert_pure_sequence(next(event.spaces)))
-    #     #console.print(formatter(next(event.spaces)))
+    from core.topologies.tooling.prettier import SpaceState1DFormatter
+    from rich.console import Console
+    formatter = SpaceState1DFormatter()
+    formatter.show_symbols = True
+    # formatter.highlight_cells_with_id = {6, 28}
+    console = Console(width=1000)
+    for event in system.events:
+        console.print(formatter(event.spaces.__next__()))
+        #console.print(formatter(next(event.spaces)))
 
     # Causal Graph
     # from core.graph import EventCausalityGraph

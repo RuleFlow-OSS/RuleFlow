@@ -283,7 +283,6 @@ class P(Plugin):
             )
         )
 
-    # noinspection PyTypeChecker
     def _handle_styling_update(self):
         control_bitmap: list[bool] = [False, False, False, False, False]
         for i in self.style_controls.selected: control_bitmap[i] = True
@@ -300,7 +299,6 @@ class P(Plugin):
             self.view.notify('Invalid style map.', severity='error')
             return
 
-        # noinspection PyTypeChecker
         self.space_state_formatter.config(
             *control_bitmap[:4],
             style_map,
@@ -308,7 +306,6 @@ class P(Plugin):
             symbol_map
         )
 
-        # noinspection PyTypeChecker
         self._rebuild_ruleset_table(self.flow.ruleset.rules, self.ruleset_table)
         self._rebuild_rows()
 
@@ -329,7 +326,6 @@ class P(Plugin):
 • ----
 """
 
-    # noinspection PyTypeChecker
     def _handle_mouse_over_data_table(self, coord: Coordinate | None, offset: int) -> None:
         def reset_highlighted():
             self._reset_hovered_info_label()
@@ -559,7 +555,6 @@ class P(Plugin):
         """Update the column widths as Textual does not currently do that for us when removing rows."""
         dt = self.data_table
         if 0 <= (rc:=(dt.row_count - 1)):
-            # noinspection PyProtectedMember
             dt._update_column_widths(
                 {dt.coordinate_to_cell_key(Coordinate(rc, i)) for i in range(len(dt.columns))}
             )

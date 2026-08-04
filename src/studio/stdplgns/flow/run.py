@@ -195,9 +195,7 @@ class P(Plugin):
         # show profiler info
         if self.mem_profile.value:
             mem_end = self._process.memory_info().rss / 1024 / 1024
-            # noinspection PyUnboundLocalVariable
             elapsed_time = time.perf_counter() - start_time
-            # noinspection PyUnboundLocalVariable
             mem_diff = mem_end - mem_start
             self.cft(
                 self.log_view.write,

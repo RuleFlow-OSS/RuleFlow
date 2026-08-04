@@ -1,8 +1,7 @@
 """This module implement certain N-dimensional space states."""
-from core.engine import SpaceState, DeltaCell, Topology
-from core.topologies.vector import CellVector, Cell
-from typing import MutableSequence, Sequence, Iterator, Any
-from copy import copy
+from core.engine import SpaceState, DeltaCell, Topology, Cell
+from core.topologies.vector import CellVector
+from collections.abc import Sequence
 
 
 class SpaceState1D(SpaceState):
@@ -67,13 +66,11 @@ class SpaceState1D(SpaceState):
         return DeltaCell(tuple(self.vec.prev_gen.get_cells(k)), ())
 
 
-# noinspection PyAbstractClass
 class SpaceState2D(SpaceState):
     """It is here that we implement the 2D SpaceState. Just a placeholder for now."""
     pass
 
 
-# noinspection PyAbstractClass
 class SpaceState3D(SpaceState):
     """It is here that we implement the 3D SpaceState. Just a placeholder for now."""
     pass

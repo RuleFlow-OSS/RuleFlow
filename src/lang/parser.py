@@ -95,6 +95,7 @@ FLAG_DEF: /-[a-zA-Z][a-zA-Z0-9_]*(\[[^\]]*\])?/
 
 // Comments
 COMMENT: /#[^\n]*/
+MULTILINE_COMMENT: /\"\"\"[\s\S]+?\"\"\"/
 
 // ==========================================
 // Imports and Ignores
@@ -107,6 +108,7 @@ COMMENT: /#[^\n]*/
 %ignore WS
 %ignore NEWLINE
 %ignore COMMENT
+%ignore MULTILINE_COMMENT
 """
 
 
@@ -188,7 +190,6 @@ class FlowLangTransformer(Transformer):
     def instruction_sequence(self, items):
         return items
 
-    # noinspection unresolved-references
     def instruction(self, items):
         out = {
             "type": 'instruction',
@@ -282,11 +283,11 @@ class FlowLangTransformer(Transformer):
         raw = items[0].value[1:]
 
         # Default value for boolean/unit flags (e.g., -a, -nt)
-        args: bool = True
+        args: Any = True
         name = raw
         if '[' in raw and raw.endswith(']'):
             name, args_part = raw.split('[', 1)
-            args: Any = eval(args_part[:-1])  # remove trailing "]"
+            args = eval(args_part[:-1])  # remove trailing "]"
         return {name: args}
 
 
@@ -301,14 +302,13 @@ def FlowLangParser(use_transformer: bool = True) -> Lark:
 
 def parse(value: str) -> dict[str, Any]:
     """Parsing helper for top-level directives"""
-    # noinspection PyTypeChecker
     return FlowLangParser(use_transformer=True).parse(value)
 
 
 if __name__ == "__main__":
     from pprint import pprint
     parser = FlowLangParser(True)
-    t = parser.parse("""
+    t = parser.parse(r'''
     @test(1, "12", (2,2), k=2);
     -test[slice(1, 1, 1)]
     (-a -j[2])(
@@ -317,5 +317,9 @@ if __name__ == "__main__":
         [1] --> AB;
         (1, 2, -3, 4) --> AB;
     )
-    """)
+    # This is an example of a single line comment!
+    """md
+    this is an example of multiline comment!
+    """
+    ''')
     pprint(t)
