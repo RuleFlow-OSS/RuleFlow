@@ -318,8 +318,9 @@ if __name__ == "__main__":
         (1, 2, -3, 4) --> AB;
     )
     # This is an example of a single line comment!
-    """md
-    this is an example of multiline comment!
+    """
+    This is an example of multiline comment.
+    It is a cool feature!
     """
     ''')
     pprint(t)

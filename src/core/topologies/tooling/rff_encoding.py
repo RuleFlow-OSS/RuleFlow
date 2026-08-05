@@ -24,6 +24,7 @@ def chr_rff(o: int) -> str:
         return PRINTABLE_CHARS[int(o) % _RFF_LEN]
 
 
+# NOTE: not currently using the following code. It may, however, be useful at some point in the future.
 # def ord_rff(c: str) -> int:
 #     """
 #     Returns the integer index of a character in the RFF character set.

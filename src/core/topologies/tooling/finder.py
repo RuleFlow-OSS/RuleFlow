@@ -85,7 +85,7 @@ class VectorRegexSearch:
         elif isinstance(p, bytearray | Sequence):
             return np.array(p).tobytes()
         else:
-            return p
+            return p  # type: ignore
 
     def _retrieve_pattern(self, p: bytes) -> Pattern:
         """Retrieves or compiles the pattern, utilizing the instance cache if enabled."""

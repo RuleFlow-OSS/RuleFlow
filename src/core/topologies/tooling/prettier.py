@@ -128,14 +128,14 @@ if __name__ == "__main__":
     from rich.console import Console
     system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space='AB')
     system.build_multiway_space_links = True
-    system.evolve(200)
+    system.evolve(30)
 
     console = Console(width=1000)
     formatter = SpaceState1DFormatter()
     formatter.encode_using_property = 'id'
     formatter.style_using_property = 'id'
     formatter.encode_ordinals = True
-    formatter.cell_padding = 5
+    formatter.cell_padding = 3
     formatter.styling = True
     # formatter.highlight_cells_with_id = {188: 'on black'}
 

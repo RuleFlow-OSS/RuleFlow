@@ -9,6 +9,7 @@ import numpy as np
 from core.engine import Cell, Flow, RuleSet
 from core.topologies.nd_space import SpaceState1D
 from core.topologies.vector import Vector
+from core.topologies.tooling import finder
 from lang.parser import parse
 from lang.bootstrapped.python import bootstrapped_py_parse
 from lang.implementation import (
@@ -170,20 +171,32 @@ class FlowLangBase(Flow):
 class FlowLang(FlowLangBase):
     """The main interpreter object, it is what actually runs any given code."""
     def __init__(self):
+        """Stateful helpers are defined here such as Vector Classes and Interpreters"""
         super().__init__()
-        # TODO: set all the stateful helper APIs here such as Vector Classes and Interpreters
+
+        # Set up the finder
+        self.finder = finder.VectorRegexSearch
 
         # Set up the interpreter
         self.interpreter = Interpreter()
+
+        # NOTE: make sure to update any presets (if the below directives are used in them) when names are changed!
         self.interpreter.set_directive_group(
             'initializer',
             {
-                'init': lambda *a: map(eval, map(str, a)),  # used to set the initial universe conditions.
-                # We map str to the args because the parser.py auto-converts number characters (and others) to their actual types... str() converts these back.
-                # I know, I know... eval is unsafe. But in this context, I think it's fine because FlowLang is a language built on top of python. Just be careful if using FlowLang on a deployed server for users to use.
+                'init': lambda *args: tuple(map(str, args)),  # used to set the initial universe conditions.
                 'mem': lambda mode: mode,  # used to set the vec container for the SpaceState.
 
-                # setters (note: make sure to update any presets in the parser if names are changed here)
+                # object exposure
+                'Self': self,
+                'Interpreter': self.interpreter,
+                'Finder': self.finder,
+
+                # custom directives
+                'set_finder_core': None,  # to change the finder backend
+                'reset_state': None,  # to reset the settings caused by directive calls
+
+                # alias directives
                 'target_cache': vec.enable_bytes_cache,
                 'pattern_cache': vec.enable_pattern_cache,
                 'regex_backend': vec.set_regex_backend,

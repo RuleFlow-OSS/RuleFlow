@@ -13,6 +13,7 @@ from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self, Callable
 from core.numlib import INF
 from core.signals import Signal
 from core.topologies.nd_space import SpaceState1D as SpaceState
+from core.topologies.tooling.finder import VectorRegexSearch, VectorLiteralSearch
 from core.engine import (
     Cell,
     Rule as RuleABC,
@@ -24,7 +25,7 @@ from core.engine import (
 
 type SelectorCallable = Callable[[SpaceState], Iterator[tuple[int, int]]]  # The callable is passed a SpaceState and returns span matches
 type TargetCallable = Callable[[SpaceState, tuple[int, int]], Sequence[int]]  # The callable takes the SpaceState and match span (for context information) and returns the target sequence.
-
+type Finder = VectorRegexSearch | VectorLiteralSearch
 
 class Selector(NamedTuple):
     type: Literal["literal", "regex", "range", "callable"]
@@ -64,10 +65,11 @@ class BaseRule(RuleABC):
         'life': 'lifespan',
     }
 
-    def __init__(self, selector: Sequence[Selector], target: Sequence[Target]):
+    def __init__(self, selector: Sequence[Selector], target: Sequence[Target], finder: Finder):
         super().__init__()
         self.selector: Sequence[Selector] = selector  # used by self.match()
         self.target: Sequence[Target] = target  # used by self.apply()  # we use Sequence because it fits our grammar more elegantly, even though it adds not functionality.
+        self.finder: Finder = finder
 
         # Complex Functionality
         self.chain: list[BaseRule] = [self]  # so that multiple rules can be chained to this one. Each rule here is treated as though it is "self".
