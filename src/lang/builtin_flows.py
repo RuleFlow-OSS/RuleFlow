@@ -1,25 +1,30 @@
 PRESETS: dict[str, str] = {
-    'ca.preset': """@regex_find_args(overlapped=True);
+    'ca.preset': """
+@self.regex_searcher.set_find_args(overlapped=True)
+@self.literal_searcher.set_overlapping_mode(True)
 @compress(0);
 @merge(0);
--pl[inf] -mr[0,inf]""",  # default import code to streamline the use of CAs in the 0th group.
+-pl[inf] -mr[0,inf]
+""",  # default import code to streamline the use of CAs in the 0th group.
 
-    'global_multiway.preset': """@search_buffer(false);
+    'global_multiway.preset': """
 -gb[false]
 -sr[0, inf]
 -mr[0, inf]
--bl[inf]""",  # search buffer becomes "corrupt" after edits, so disable.
+-bl[inf]
+""",  # search buffer becomes "corrupt" after edits, so disable.
 
-    'ordered_multiway.preset': """@search_buffer(false);
+    'ordered_multiway.preset': """
 -gb[true]
 -sr[0, inf]
 -mr[0, inf]
--bl[inf]""", # only the first rule (in ordered precedence) that matches is branched out
+-bl[inf]
+""", # only the first rule (in ordered precedence) that matches is branched out
 }
 
 FLOWS: dict[str, str] = {
     # ==== Wolfram Numbering Scheme Ruleset Enumeration ====
-    'wns.pflow': """
+    'wns.static.pflow': """
 charset: str = args[0]
 if len(charset) != 2:
     raise ValueError("Charset must contain exactly 2 characters.")
@@ -36,7 +41,7 @@ for (b1, b2, b3), result_bit in zip(binary_patterns, rule_bits):
 """,
 
     # ==== Totalistic Cellular Automata Enumeration ====  NOTE: this needs a lot of testing...
-    'tca.pflow': """
+    'tca.static.pflow': """
 import itertools
 
 charset: str = args[0]
@@ -79,6 +84,7 @@ for p in itertools.product(range(k), repeat=neighborhood_size):
     ---
 """,
 
+    # TODO: all Sessie code should be removed to dedicated files.
     # ==== Reduced Sessie Enumeration ====
     # Generates the Sequential Substitution System (SSS) ruleset for a given index
     # using the Reduced Sessie Enumeration (RSS) algorithm described in the

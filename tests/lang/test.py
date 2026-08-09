@@ -1,4 +1,4 @@
-from src.lang import FlowLang
+from src.lang.interpreter import FlowLang
 
 if __name__ == "__main__":
     import psutil

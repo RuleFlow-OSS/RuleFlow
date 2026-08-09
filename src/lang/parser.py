@@ -1,7 +1,7 @@
 from lark import Lark, Transformer
 from core.numlib import str_to_num, INF
 from lang.builtin_flows import PRESETS, FLOWS
-from typing import Any, Callable
+from typing import Any, Callable, Literal, Sequence
 from pathlib import Path
 WORKING_DIR: Path = Path(__file__).parent
 def set_working_dir(cd: Path) -> None:
@@ -32,7 +32,7 @@ start: (global_flags | block | instruction_sequence | directive | COMMENT)*
 // ==========================================
 
 // Directives
-directive: "@" SIMPLE_LITERAL "(" [/.+?(?=\);)/] ");"
+directive: "@" [/[^;]+/] ";"
 
 // A statement for global flags, appearing alone.
 global_flags: flags
@@ -114,25 +114,21 @@ MULTILINE_COMMENT: /\"\"\"[\s\S]+?\"\"\"/
 
 def macro_directive(path: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """Macro (like importing, but simply dropping the src right into the ast) from a file or preset"""
-    # import bootstrapped parsers here to avoid cyclic import errors
-    from lang.bootstrapped.python import bootstrapped_py_parse
-    from lang.bootstrapped.wolfram import bootstrapped_wl_parse
-    bootstrapped: dict[str, Callable] = {'.pflow': bootstrapped_py_parse, '.wpflow': bootstrapped_wl_parse}
     value: str | None = BUILTIN_FLOWS.get(path, None)
     if value is None:
         with open(WORKING_DIR / path) as f:
             value = f.read()
-    p: Callable = bootstrapped.get(path.rsplit('.')[1], parse)  # fallback in pure .flow parser (defined below)
-    result = p(value, *args, **kwargs)
-    result['type'] = 'macro'  # we create a "macro" object type so that the transformer can resolve/merge it.
+    path_stem: BootstrappedParserType = path.rsplit('.')[1]  # type: ignore
+    result = get_bootstrapped_parse_function(path_stem)(value, *args, **kwargs)
+    result['type'] = 'macro'  # we create a "macro" object type so that the transformer can resolve it.
     return result
 
 
 def intercept_top_level_directive(d: dict[str, Any]) -> list[dict[str, Any]]:
-    """Top level directives run BEFORE anything is run. They allow imports/includes to happen, part of constructing the actual flow source."""
-    name: str = d['name']
-    if name == 'macro':
-        return [macro_directive(*d['args'])]
+    """Top level directives run BEFORE anything is run. They allow macros to run, part of constructing the actual flow source."""
+    expr: str = d['expr']
+    if expr.startswith('macro('):
+        return [eval(expr, globals={'macro': macro_directive})]
     else:  # if there is nothing to intercept just propagate
         return [d]
 
@@ -154,7 +150,7 @@ class FlowLangTransformer(Transformer):
         for array in items:
             for item in array:
                 if item['type'] == 'directive':
-                    directives.append((item['name'], item['args']))
+                    directives.append((item['expr']))
                 elif item['type'] == 'global_flags':
                     global_flags.update(item['flags'])
                 elif item['type'] == 'instruction':
@@ -172,8 +168,7 @@ class FlowLangTransformer(Transformer):
     def directive(self, items):
         return intercept_top_level_directive({
             'type': 'directive',
-            'name': items[0].value,
-            'args': parse_callable_args(items[1].value) if items[1] else None
+            'expr': items[0].value
         })
 
     def global_flags(self, items):
@@ -232,10 +227,14 @@ class FlowLangTransformer(Transformer):
         return {"type": "regex", "value": items[0].value[1:-1].encode()}
 
     def literal_term(self, items):
+        evaluated: Any = eval(items[0].value)
+        if isinstance(evaluated, Sequence):
+            value: tuple[int, ...] = tuple[int](ord(i) if isinstance(i, str) else i for i in evaluated)
+        else:
+            value: tuple[int, ...] = (ord(evaluated) if isinstance(evaluated, str) else evaluated,)
         return {
             "type": "literal",
-            "value": tuple[int](ord(i) if isinstance(i, str) else i
-                                for i in eval(items[0].value))
+            "value": value
         }
 
     def literal_chars_term(self, items):
@@ -287,7 +286,7 @@ class FlowLangTransformer(Transformer):
         name = raw
         if '[' in raw and raw.endswith(']'):
             name, args_part = raw.split('[', 1)
-            args = eval(args_part[:-1])  # remove trailing "]"
+            args = eval(args_part[:-1], globals={'inf': INF})
         return {name: args}
 
 
@@ -305,11 +304,24 @@ def parse(value: str) -> dict[str, Any]:
     return FlowLangParser(use_transformer=True).parse(value)
 
 
+type BootstrappedParserType = Literal['pflow', 'wpflow']
+def get_bootstrapped_parse_function(name: BootstrappedParserType, default: Any = parse) -> Callable[..., dict[str, Any]] | Any:
+    # import bootstrapped parsers here to avoid cyclic import errors
+    from lang.bootstrapped.python import bootstrapped_py_parse
+    from lang.bootstrapped.wolfram import bootstrapped_wl_parse
+    return {
+        'pflow': bootstrapped_py_parse,
+        'wpflow': bootstrapped_wl_parse
+    }.get(name, default)
+
+
 if __name__ == "__main__":
     from pprint import pprint
     parser = FlowLangParser(True)
     t = parser.parse(r'''
+    @macro("ca.preset");
     @test(1, "12", (2,2), k=2);
+    @test2.all()[0].yup(1, 2, 3);
     -test[slice(1, 1, 1)]
     (-a -j[2])(
         "AAB" AB -> ABA;

@@ -9,7 +9,7 @@ from core.engine import (
     DeltaCell
 )
 from core.topologies.nd_space import SpaceState1D as SpaceState
-from core.topologies.tooling.finder import VectorRegexSearch
+from core.topologies.tooling.searcher import VectorRegexSearch
 import numpy as np
 finder: VectorRegexSearch = VectorRegexSearch()
 
@@ -55,8 +55,7 @@ if __name__ == "__main__":
     # formatter.highlight_cells_with_id = {6, 28}
     console = Console(width=1000)
     for event in system.events:
-        console.print(formatter(event.spaces.__next__()))
-        #console.print(formatter(next(event.spaces)))
+        console.print(formatter(next(event.spaces)))
 
     # Causal Graph
     # from core.graph import EventCausalityGraph

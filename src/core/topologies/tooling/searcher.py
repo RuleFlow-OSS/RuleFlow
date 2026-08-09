@@ -1,5 +1,7 @@
 """Implements finding algorithms on pure numpy vectors."""
 import re
+from collections.abc import Callable
+
 try:
     import regex
 except ImportError:
@@ -26,7 +28,7 @@ type PureVector = np.ndarray[tuple[int]]
 
 
 # ================================ Regex Vector Search ================================
-type Pattern = Union[re.Pattern, regex.Pattern]
+type RegexPattern = Union[re.Pattern, regex.Pattern]
 
 
 class VectorRegexSearch:
@@ -34,7 +36,6 @@ class VectorRegexSearch:
 
     def __init__(
         self, backend: Literal['re', 'regex'] = 'regex',
-        pattern_encoding: str = 'ascii',
         use_pattern_cache: bool = True,
         pattern_cache_size: int = 1024
     ):
@@ -43,8 +44,6 @@ class VectorRegexSearch:
         All settings and caches are instance-specific.
         """
         self.regex_module = regex if backend == 'regex' else re
-        self.pattern_encoding = pattern_encoding
-
         self._use_pattern_cache = use_pattern_cache
         self._pattern_cache_size = pattern_cache_size
         self._pattern_cache: dict[bytes, Any] = {}
@@ -77,17 +76,22 @@ class VectorRegexSearch:
         if not enable:
             self._pattern_cache.clear()
 
-    def normalize_pattern(self, p: PureVector | str | bytearray | Sequence[int] | bytes) -> bytes:
+    def clear_pattern_cache(self):
+        """Call to clear the pattern cache. Should be used if the compiler args are changed."""
+        self._pattern_cache.clear()
+
+    @staticmethod
+    def normalize_pattern(p: PureVector | str | bytearray | Sequence[int] | bytes) -> bytes:
         if isinstance(p, np.ndarray):
             return p.tobytes()
         elif isinstance(p, str):
-            return p.encode(self.pattern_encoding)
+            return p.encode()
         elif isinstance(p, bytearray | Sequence):
             return np.array(p).tobytes()
         else:
             return p  # type: ignore
 
-    def _retrieve_pattern(self, p: bytes) -> Pattern:
+    def _retrieve_pattern(self, p: bytes) -> RegexPattern:
         """Retrieves or compiles the pattern, utilizing the instance cache if enabled."""
         if not self._use_pattern_cache:
             return self.regex_module.compile(
@@ -110,7 +114,7 @@ class VectorRegexSearch:
         Executes the regex finditer functionality. If the search_buffer is a np.ndarray, it must be c contiguous.
         Treats the array memory directly as a byte buffer.
         """
-        compiled_pattern: Pattern = self._retrieve_pattern(pattern)
+        compiled_pattern: RegexPattern = self._retrieve_pattern(pattern)
 
         # memoryview creates an O(1) non-copying view into the numpy array's contiguous memory
         # Python's `re` and `regex` libraries can search buffer-protocol objects natively.
@@ -119,9 +123,6 @@ class VectorRegexSearch:
 
 
 # ================================ Literal Sub-Vector Search ================================
-type SearchBackend = Literal['numpy', 'c_bytes', 'kmp', 'rabin_karp']
-
-
 @njit
 def _kmp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool) -> Iterator[int]:
     """JIT-compiled core loop for the KMP algorithm."""
@@ -235,18 +236,29 @@ def _wildcard_naive_core(pattern: np.ndarray, search_buffer: np.ndarray, overlap
         i += 1
 
 
-class VectorLiteralSearch:
+type VectorSearchBackendType = Literal['numpy', 'c_bytes', 'kmp', 'rabin_karp']
+class VectorSearch:
     """
     For highly optimized exact sub-vector matches. Supports -1 as a wildcard.
     Only supports the fastest zero-copy NumPy heuristics and C-level memory implementations.
     """
 
-    def __init__(self, backend: SearchBackend = 'numpy', overlapping: bool = False):
+    def __init__(self, backend: VectorSearchBackendType = 'numpy', overlapping: bool = False):
         """Initializes the literal searcher with a default execution strategy."""
-        self.backend: SearchBackend = backend
+        self._backend_name: VectorSearchBackendType = backend
+        self._backend_map: dict[VectorSearchBackendType, Callable[[np.ndarray, np.ndarray], Iterator[tuple[int, int]]]] = {
+            'numpy': self._search_numpy,
+            'c_bytes': self._search_c_bytes,
+            'kmp': self._search_kmp,
+            'rabin_karp': self._search_rabin_karp
+        }
+        self._backend_callback: Callable[[np.ndarray, np.ndarray], Iterator[tuple[int, int]]] = self._backend_map[backend]
         self.overlapping: bool = overlapping
 
-    def set_backend(self, backend: SearchBackend) -> None:
+    def set_overlapping_mode(self, b: bool) -> None:
+        self.overlapping = b
+
+    def set_backend(self, backend: VectorSearchBackendType) -> None:
         """
         Dynamically switch the underlying search algorithm.
 
@@ -279,7 +291,8 @@ class VectorLiteralSearch:
         Args:
             backend: The string identifier of the backend to use.
         """
-        self.backend = backend
+        self._backend_name: VectorSearchBackendType = backend
+        self._backend_callback = self._backend_map[backend]
 
     def _search_numpy(self, pattern: np.ndarray, search_buffer: np.ndarray) -> Iterator[tuple[int, int]]:
         """
@@ -289,7 +302,6 @@ class VectorLiteralSearch:
         """
         p_len: int = len(pattern)
         b_len: int = len(search_buffer)
-
         if p_len > b_len or p_len == 0:
             return
 
@@ -318,7 +330,7 @@ class VectorLiteralSearch:
         first_val = pattern[first_fixed_idx]
         last_val = pattern[last_fixed_idx]
 
-        # 1. Filter by first fixed element
+        # Filter by first fixed element
         first_elem_matches = np.nonzero(search_buffer[:b_len - p_len + 1 + first_fixed_idx] == first_val)[0]
 
         # Shift candidate indices back to the start of the pattern window
@@ -331,7 +343,7 @@ class VectorLiteralSearch:
         if len(candidates) == 0:
             return
 
-        # 2. Filter remaining candidates by last fixed element
+        # Filter remaining candidates by last fixed element
         if first_fixed_idx != last_fixed_idx:
             last_elem_offsets = candidates + last_fixed_idx
             last_elem_matches = search_buffer[last_elem_offsets] == last_val
@@ -340,7 +352,7 @@ class VectorLiteralSearch:
         if len(candidates) == 0:
             return
 
-        # 3. Validate surviving candidates utilizing sliding window view
+        # Validate surviving candidates utilizing sliding window view
         windows = sliding_window_view(search_buffer, p_len)
         candidate_windows = windows[candidates]
 
@@ -351,7 +363,7 @@ class VectorLiteralSearch:
 
         final_matches = candidates[valid_mask]
 
-        # 4. Handle yielding and overlap filtering
+        # Handle yielding and overlap filtering
         last_end: int = -1
         for idx in final_matches:
             if not self.overlapping and idx < last_end:
@@ -367,7 +379,9 @@ class VectorLiteralSearch:
         p_len: int = len(pattern)
         b_len: int = len(search_buffer)
         if p_len > b_len or p_len == 0:
-            return
+            return None
+        if (pattern == -1).any():
+            return self._search_numpy(pattern, search_buffer)
 
         itemsize = search_buffer.itemsize
         pattern_bytes = pattern.tobytes()
@@ -425,28 +439,10 @@ class VectorLiteralSearch:
         if not isinstance(pattern, np.ndarray) or not isinstance(search_buffer, np.ndarray):
             raise TypeError("Both pattern and search_buffer must be NumPy ndarrays.")
         if pattern.ndim != 1 or search_buffer.ndim != 1:
-            raise ValueError("VectorLiteralSearch currently supports 1D vectors only.")
-
-        # Auto-cast pattern to match the buffer dtype safely to support generalized numeric matches
+            raise ValueError("VectorSearch currently supports 1D vectors only.")
         if pattern.dtype != search_buffer.dtype:
             pattern = pattern.astype(search_buffer.dtype)
-
-        has_wildcard = (pattern == -1).any()
-
-        if self.backend == 'numpy':
-            return self._search_numpy(pattern, search_buffer)
-        elif self.backend == 'c_bytes':
-            if has_wildcard:
-                # c_bytes mathematically cannot support wildcards at the byte-alignment level; fallback to numpy
-                return self._search_numpy(pattern, search_buffer)
-            return self._search_c_bytes(pattern, search_buffer)
-        elif self.backend == 'kmp':
-            return self._search_kmp(pattern, search_buffer)
-        elif self.backend == 'rabin_karp':
-            return self._search_rabin_karp(pattern, search_buffer)
-        else:
-            raise ValueError(
-                f"Unknown fast backend requested: {self.backend}. Use 'numpy', 'c_bytes', 'kmp', or 'rabin_karp'.")
+        return self._backend_callback(pattern, search_buffer)
 
 
 class VectorSymbolicAutomatonSearch:
@@ -483,7 +479,7 @@ if __name__ == "__main__":
 
 
 
-    # print("===== Testing VectorLiteralSearch =====")
+    # print("===== Testing VectorSearch =====")
     #
     # # The backends we preserved in the optimization sweep
     # available_backends = ['c_bytes', 'numpy', 'kmp', 'rabin_karp']
@@ -497,7 +493,7 @@ if __name__ == "__main__":
     # print(f"Pattern: {int_pattern}")
     #
     # for backend in available_backends:
-    #     searcher = VectorLiteralSearch(backend=backend, overlapping=False)
+    #     searcher = VectorSearch(backend=backend, overlapping=False)
     #     matches = list(searcher(int_pattern, int_buffer))
     #     print(f"\n[{backend}] Spans: {matches}")
     #     for start, end in matches:
@@ -512,8 +508,8 @@ if __name__ == "__main__":
     # print(f"Pattern: {float_pattern}")
     #
     # for backend in available_backends:
-    #     searcher_no_ov = VectorLiteralSearch(backend=backend, overlapping=False)
-    #     searcher_ov = VectorLiteralSearch(backend=backend, overlapping=True)
+    #     searcher_no_ov = VectorSearch(backend=backend, overlapping=False)
+    #     searcher_ov = VectorSearch(backend=backend, overlapping=True)
     #
     #     matches_no_ov = list(searcher_no_ov(float_pattern, float_buffer))
     #     matches_ov = list(searcher_ov(float_pattern, float_buffer))
@@ -529,13 +525,13 @@ if __name__ == "__main__":
     # print(f"Pattern (int8 before search): {int8_pattern}")
     #
     # # We will test this specifically on 'c_bytes' since it requires precise memory alignment
-    # searcher_cast = VectorLiteralSearch(backend='c_bytes')
+    # searcher_cast = VectorSearch(backend='c_bytes')
     # matches_cast = list(searcher_cast(int8_pattern, uint64_buffer))
     # print(f"[c_bytes] Matches after auto-cast to uint64: {matches_cast}")
     #
     # # --- Test 4: Edge Cases ---
     # print("\n--- Test 4: Edge Cases (Backend: kmp) ---")
-    # edge_searcher = VectorLiteralSearch(backend='kmp')
+    # edge_searcher = VectorSearch(backend='kmp')
     # base_buffer = np.array([1, 2, 3, 4, 5], dtype=np.int32)
     # print(f"Base Buffer: {base_buffer}")
     #
@@ -565,5 +561,5 @@ if __name__ == "__main__":
     # print(f"Pattern: {uint8_pattern}")
     #
     # for backend in available_backends:
-    #     searcher_1b = VectorLiteralSearch(backend=backend)
+    #     searcher_1b = VectorSearch(backend=backend)
     #     print(f"[{backend}] Matches: {list(searcher_1b(uint8_pattern, uint8_buffer))}")

@@ -172,7 +172,7 @@ class CellVector(MutableSequence):
                  data: Sequence[int],
                  generation: int = 0,
                  id_start: int = 0,
-                 dtypes: tuple[np.unsignedinteger, ...] = (np.uint8, np.uint64, np.uint64)):
+                 dtypes: tuple[np.unsignedinteger, ...] = (np.uint8, np.uint64, np.uint64)):  # type: ignore
         self.data: Vector = Vector(data, dtype=dtypes[0])
         self.generations: Vector = Vector(np.full(len(self.data), generation, dtype=dtypes[1]), dtype=dtypes[1])
         self.ids: Vector = Vector(np.arange(id_start, id_start + len(self.data), dtype=dtypes[2]), dtype=dtypes[2])
@@ -255,22 +255,21 @@ class CellVector(MutableSequence):
 # ================================ Vault Implementation ================================
 # Long-term TODO: think about and implement this memory efficient storage data structure...
 # Long-term TODO: implement active-frontier algorithms...
-pass
 # class Piece(NamedTuple):
 #     method: Callable  # needs to be the class method so self is not bound
 #     args: tuple[Any]
 #     kwargs: dict[str, Any]
 #
 #
-# class CellVectorVault:
-#     def __init__(self, data: Sequence[int]):
-#         # TODO: the getter should be a generator that leaves persistence up to the caller.
-#         self.data: CellVector | None         # the vec actual data
-#         self.frontier: Vector                # the latest update (so that searches are efficient)
-#         self.pieces: list[Piece] = []        # the updates stored as pieces for this branch
-#         self.prev_gen: CellVectorVault       # ...
-#         self.checkpoint: bool                # whether this vault is a checkpoint
-#         self.len: int = len(data)            # the length of the current data
+class CellVectorVault:
+    def __init__(self, data: Sequence[int]):
+        pass  # TODO: the getter should be a generator that leaves persistence up to the caller.
+        # self.data: CellVector | None         # the vec actual data
+        # self.frontier: Vector                # the latest update (so that searches are efficient)
+        # self.pieces: list[Piece] = []        # the updates stored as pieces for this branch
+        # self.prev_gen: CellVectorVault       # ...
+        # self.checkpoint: bool                # whether this vault is a checkpoint
+        # self.len: int = len(data)            # the length of the current data
 
 
 if __name__ == '__main__':

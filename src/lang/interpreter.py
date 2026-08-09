@@ -1,21 +1,60 @@
 """
-==== FUTURE CONSIDERATIONS ====
-- For the 'init' directive, maybe use a save eval such as evalidate rather than the current eval().
+Implements the code that actually interprets and runs the flows.
 """
-from typing import Any, Iterator, Sequence, Callable, cast, Literal
+from typing import Any, Iterator, Callable
+from collections.abc import Sequence
 import numpy as np
+import importlib.util
+from pathlib import Path
 
 # Import the base engine classes
-from core.engine import Cell, Flow, RuleSet
-from core.topologies.nd_space import SpaceState1D
-from core.topologies.vector import Vector
-from core.topologies.tooling import finder
-from lang.parser import parse
-from lang.bootstrapped.python import bootstrapped_py_parse
+from core.engine import Flow, RuleSet
+from core.topologies.nd_space import SpaceState1D, VectorBackendType
+from core.topologies.tooling.searcher import VectorRegexSearch, VectorSearch
+from lang.parser import parse, get_bootstrapped_parse_function, BootstrappedParserType
 from lang.implementation import (
     Selector, Target, BaseRule, SubstitutionRule, OverwriteRule, InsertionRule, DeletionRule
 )
-from lang.implementation import SelectorCallable, TargetCallable
+
+
+def import_from_file(file_path: str | Path, *names: str) -> dict[str, Any]:
+    """Dynamically imports a specific object or all defined objects from a .py file.
+
+    Args:
+        file_path: Path to the .py file.
+        names: Optional name of the object to retrieve. If None, returns
+          a dictionary of all objects defined in the module.
+
+    Returns:
+        The requested object, or a dictionary mapping attribute names to objects.
+    """
+    path = Path(file_path).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"No file found at: {path}")
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module spec for: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if names:
+        objects: dict[str, Any] = {}
+        for name in names:
+            if not hasattr(module, name):
+                raise AttributeError(f"Object '{name}' not found in module '{path.name}'")
+            objects[name] = getattr(module, name)
+        return objects
+    if hasattr(module, "__all__"):  # if __all__ is explicitly defined, prefer that list
+        return {
+            name: getattr(module, name)
+            for name in module.__all__
+            if hasattr(module, name)
+        }
+    return {
+        key: value
+        for key, value in vars(module).items()
+        if not key.startswith("__")
+    }
+
 
 
 RULE_MAP: dict[str, type[BaseRule]] = {
@@ -30,24 +69,20 @@ class Interpreter:
     """An interpreter that translates the transformed AST into working rule flow objects."""
     def __init__(self):
         self.convert_literal_selectors_to_regex_selectors: bool = True
-        self.selector_callables: dict[str, SelectorCallable] = {}
-        self.target_callables: dict[str, TargetCallable] = {}
-        self.directive_objects: dict[str, dict[str, Any]] = {}  # different sets of directives can be assigned to groups (can be used for different priorities for instance)
+        self.instruction_scope: dict[str, Callable] = {}
+        self.directive_scopes: dict[str, dict[str, Any]] = {}  # different sets of directives can be assigned to groups (can be used for different priorities for instance)
 
-    def set_selector_callables(self, callables: dict[str, SelectorCallable]) -> None:
-        self.selector_callables.update(callables)
+    def set_directive_group(self, group_name: str, scope: dict[str, Any]) -> None:
+        self.directive_scopes[group_name] = scope
 
-    def set_target_callables(self, callables: dict[str, TargetCallable]) -> None:
-        self.target_callables.update(callables)
+    def set_instruction_scope(self, scope: dict[str, Callable]) -> None:
+        self.instruction_scope.update(scope)
 
-    def unset_selector_callable(self, callable_name: str) -> SelectorCallable:
-        return self.selector_callables.pop(callable_name)
+    def reset_instruction_scope(self) -> None:
+        self.instruction_scope.clear()
 
-    def unset_target_callable(self, callable_name: str) -> TargetCallable:
-        return self.target_callables.pop(callable_name)
-
-    def set_directive_group(self, group_name: str, directive_objects: dict[str, Any]) -> None:
-        self.directive_objects[group_name] = directive_objects
+    def use_regex_for_literal_selectors(self, b: bool) -> None:
+        self.convert_literal_selectors_to_regex_selectors = b
 
     @staticmethod
     def __convert_dot_wildcard_ord_to_numerical(a: np.ndarray) -> None:
@@ -77,9 +112,9 @@ class Interpreter:
 
         if s_type in ("literal", "regex", "range"):
             return Selector(type=s_type, selector=s_value)
-        elif s_type == "callable" and s_value in self.selector_callables:
+        elif s_type == "callable" and s_value in self.instruction_scope:
             s_value: str
-            return Selector(type=s_type, selector=self.selector_callables[s_value])
+            return Selector(type=s_type, selector=self.instruction_scope[s_value])
         raise ValueError(f"Unknown selector of type '{s_type}' with value {s_value}.")
 
     def interpret_target(self, selector_data: dict[str, Any]) -> Target:
@@ -95,19 +130,20 @@ class Interpreter:
                 t_value: Sequence[int]
                 t_value: np.ndarray = np.asarray(t_value)
             return Target(type="literal", target=t_value)
-        elif t_type == "callable" and t_value in self.target_callables:
-            return Target(type="callable", target=self.target_callables[t_value])
+        elif t_type == "callable" and t_value in self.instruction_scope:
+            return Target(type="callable", target=self.instruction_scope[t_value])
         raise ValueError(f"Unknown selector of type '{t_type}' with value {t_value}.")
 
-    def interpret_instructions(self, instructions: Sequence[dict], global_flags: dict[str, Any]) -> Iterator[BaseRule]:
+    def interpret_instructions(self, instructions: Sequence[dict[str, Any]], global_flags: dict[str, Any],
+                               regex_searcher: VectorRegexSearch, literal_searcher: VectorSearch) -> Iterator[BaseRule]:
         """
         Iterates over the flat list of instructions, instantiates the correct
         Rule subclass, merges flags, and initializes fields.
         """
         for instruction in instructions:
             operator = instruction['operator']['symbol']
-            RuleClass = RULE_MAP.get(operator)
-            if not RuleClass:
+            rule_class = RULE_MAP.get(operator)
+            if not rule_class:
                 print(f"Warning: Unknown operator '{operator}'. Skipping rule.")
                 continue
 
@@ -119,7 +155,7 @@ class Interpreter:
             target = [self.interpret_target(td) for td in instruction['target']]
 
             # Instantiate Rule
-            rule_instance: BaseRule = RuleClass(selector, target)
+            rule_instance: BaseRule = rule_class(selector, target, regex_searcher, literal_searcher)
 
             # Merge and Assign Flags (Global < Rule/Group)
             final_flags = global_flags.copy()
@@ -132,27 +168,18 @@ class Interpreter:
 
             yield rule_instance
 
-    def interpret_directives(self, group_name: str, directives: list[tuple[str, Any]]) -> dict[str, Any]:
+    def interpret_directives(self, group_name: str, directives: list[str]) -> list[Any]:
         """
-        Use the directives to modify (call) the `objects`.
+        The directives are just python expressions that must be evaluated.
         """
-        objects: dict[str, Any] = self.directive_objects[group_name]
-        results: dict[str, Any] = {}
-        for path, args in directives:
-            parts = path.split('.')
-            root_name = parts[0]
-            root_obj = objects.get(root_name)
-            if not root_obj:
-                continue
-            current_obj = root_obj
+        scope: dict[str, Any] = self.directive_scopes[group_name]
+        evaluated: list[Any] = []
+        for expr in directives:
             try:
-                for part in parts[1:]:
-                    current_obj = getattr(current_obj, part)
-            except AttributeError:
-                print(f"Error: Could not traverse '{part}' in path '{path}'.")
+                evaluated.append(eval(expr, globals=scope))
+            except NameError:
                 continue
-            results[path] = current_obj(*args[0], **args[1])
-        return results
+        return evaluated
 
 
 class FlowLangBase(Flow):
@@ -173,36 +200,33 @@ class FlowLang(FlowLangBase):
     def __init__(self):
         """Stateful helpers are defined here such as Vector Classes and Interpreters"""
         super().__init__()
+        self.ast: dict[str, Any] = {}
 
-        # Set up the finder
-        self.finder = finder.VectorRegexSearch
+        # Vector backend name
+        self.vector_backend_type: VectorBackendType = 'vector'
+
+        # Set up the searcher
+        self.regex_searcher = VectorRegexSearch()
+        self.literal_searcher = VectorSearch()
 
         # Set up the interpreter
         self.interpreter = Interpreter()
 
-        # NOTE: make sure to update any presets (if the below directives are used in them) when names are changed!
+        # NOTE: make sure to update any preset flows (if the below directives are used in them) when names are changed!
         self.interpreter.set_directive_group(
             'initializer',
             {
-                'init': lambda *args: tuple(map(str, args)),  # used to set the initial universe conditions.
-                'mem': lambda mode: mode,  # used to set the vec container for the SpaceState.
+                'init': self.__init,  # used to set the initial universe conditions.
+                'mem': lambda name: setattr(self, 'vector_backend_type', name),  # used to set the memory backend
+                'regex_for_literal_selectors': self.interpreter.use_regex_for_literal_selectors,
+                'import': lambda path, *names: self.interpreter.set_instruction_scope(
+                    import_from_file(path, *names)
+                ),  # import names that can be used for selector or target callables
+                'reset_imports': self.interpreter.reset_instruction_scope,  # clear all imports
+                # 'reset_state': lambda: None,  # TODO: implement a method to reset the settings caused by directive calls.
 
                 # object exposure
-                'Self': self,
-                'Interpreter': self.interpreter,
-                'Finder': self.finder,
-
-                # custom directives
-                'set_finder_core': None,  # to change the finder backend
-                'reset_state': None,  # to reset the settings caused by directive calls
-
-                # alias directives
-                'target_cache': vec.enable_bytes_cache,
-                'pattern_cache': vec.enable_pattern_cache,
-                'regex_backend': vec.set_regex_backend,
-                'regex_compiler_args': vec.set_regex_compiler_args,
-                'regex_find_args': vec.set_regex_find_args,
-                'search_buffer': vec.enable_search_buffer
+                'self': self,
             }
         )
         self.interpreter.set_directive_group(
@@ -212,35 +236,60 @@ class FlowLang(FlowLangBase):
                 'regress': self.regress,
                 'clear': self.clear_evolution,
                 'merge': self.__merge_group,
-                'compress': self.__compress_group
+                'compress': self.__compress_group,
             }
         )
 
-    def interpret(self, src: str, *args, bootstrapped: bool = False, **kwargs) -> None:
-        self.ast: dict[str, Any] = bootstrapped_py_parse(src, *args, **kwargs) if bootstrapped else parse(src)
-        initializer_directive_responses: dict[str, Any] = self.interpreter.interpret_directives("initializer", self.ast['directives'])
-        rule_objects: list[BaseRule] = list(
-            self.interpreter.interpret_instructions(
-                self.ast['instructions'],
-                self.ast['global_flags']
-            )
-        )
-        self.set_ruleset(RuleSet(rule_objects))
-        Vec: type[vec.Vec] = getattr(vec, initializer_directive_responses.get('mem', vec.Vec.__name__))  # this is the vector we use (vec.Vec is the default)
-        if init:=initializer_directive_responses.get('init', None):
-            init = tuple(init)
-            if not self.events or self._last_init_space != init:
-                self._last_init_space = init
-                self.set_initial_space([SpaceState(Vec([Cell(s) for s in string])) for string in init])
+    def interpret(self, src: str, *args, bootstrapped: BootstrappedParserType | None = None, **kwargs) -> None:
+        self.ast: dict[str, Any] = get_bootstrapped_parse_function(bootstrapped)(src, *args, **kwargs) \
+            if bootstrapped else parse(src)
 
-        # after instantiations
+        # interpret initializer directives
+        self.interpreter.interpret_directives("initializer", self.ast['directives'])
+
+        # interpret the instructions and convert them to the rule instances
+        self._last_instructions_hash: int = 0
+        instructions: Sequence[dict[str, Any]] = self.ast['instructions']
+        global_flags: dict[str, Any] = self.ast['global_flags']
+        instructions_hash: int = hash(str(self.ast['instructions']) + str(self.ast['global_flags']))
+        if instructions_hash != self._last_instructions_hash:
+            rule_objects: list[BaseRule] = list(
+                self.interpreter.interpret_instructions(instructions, global_flags, self.regex_searcher, self.literal_searcher)
+            )
+            self.set_ruleset(RuleSet(rule_objects))
+            self._last_instructions_hash = instructions_hash
+
+        # interpret program-level directives
         self.interpreter.interpret_directives("program", self.ast['directives'])
+
+    def __init(self, *spaces: str | tuple[int | str, ...], as_path: bool = False, **kwargs):
+        space_hash: int = hash(spaces)
+        # noinspection unresolved-references
+        if not self.events or self._last_space_hash != space_hash:  # if events do not exist, it follows that a space hash will not exist and the "or" filters that out in the "if" statement.
+            self._last_space_hash = space_hash
+            ready_spaces: list[Sequence[int]] = []
+            if as_path:
+                spaces: tuple[str, ...]
+                for space_path in spaces:
+                    if space_path.endswith('.npy'):
+                        ready_spaces.append(np.load(space_path, **kwargs))
+                    else:
+                        with open(space_path) as f:
+                            ready_spaces.append(np.frombuffer(f.buffer.read(), dtype=np.uint8, **kwargs))
+            else:
+                for space in spaces:
+                    if isinstance(space, str):
+                        ready_spaces.append(np.frombuffer(space.encode(), dtype=np.uint8, **kwargs))
+                    else:  # if space is tuple
+                        ready_spaces.append(tuple[int](ord(c) if isinstance(c, str) else c for c in space))
+            # noinspection bad-argument-type
+            self.set_initial_space([SpaceState1D(space, self.vector_backend_type) for space in ready_spaces])
 
     def __merge_group(self, *identifiers: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
-        rules: list[BaseRule] = cast(list[BaseRule], self.ruleset.rules)
+        rules: list[BaseRule] = self.ruleset.rules  # type: ignore
         for i in range(len(rules)):
-            head = rules[i]
+            head: BaseRule = rules[i]
             if head.disabled:
                  continue
             if any(i in head.group for i in identifiers):
@@ -252,87 +301,64 @@ class FlowLang(FlowLangBase):
 
     def __compress_group(self, *identifiers: int | str):
         """A directive to compress a Rule Group such that causality is preserved (no cellular change if the characters look the same)"""
-        rules: list[BaseRule] = [rule for rule in cast(list[BaseRule], self.ruleset.rules)
+        rules: list[BaseRule] = [rule for rule in self.ruleset.rules  # type: ignore
                                  if any(i in rule.group for i in identifiers) and not rule.disabled]
         for rule in rules:  # If any rule makes no changes, disable it.
             if isinstance(rule, OverwriteRule):  # we only care about this type of rule... for obvious reasons
                 continue
+            # we only care about the first selector and target... we can't determine how multiple targets will behave on different match sets.
+            selector = rule.selector[0]
+            target = rule.target[0]
+            if not (isinstance(selector, Sequence) and isinstance(target, Sequence)):
+                continue
+
             rule_is_active: bool = False
-            for target in rule.target:
-                for selector in rule.selector:
-                    for s_char, t_char in zip(selector.selector, target.target):  # we only care about the first/primary target... (we can't determine how multiple targets will behave on different match sets)
-                        if t_char.quanta == '_':
-                            continue
-                        if s_char != t_char.quanta:
-                            rule_is_active = True
+            for s, t in zip(selector.selector, target.target):  # type: ignore
+                if t == -1:  # -1 is the wildcard-skip quanta
+                    continue
+                if s != t:
+                    rule_is_active = True
+                    break
             if not rule_is_active:
                 rule.disabled = True
 
-    def regress(self, n_steps: int) -> None:
-        super().regress(n_steps)
-        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if undoing anything...
-            space.cells.refresh_search_buffer()
-
-    def clear_evolution(self) -> None:
-        super().clear_evolution()
-        for space in self.current_event.spaces:  # we must remember to refresh the search buffer if clearing anything...
-            space.cells.refresh_search_buffer()
-
 
 if __name__ == "__main__":
-    # import psutil
-    # import os
-    # import gc
-    # import timeit
-    #
-    # def get_mem():
-    #     """Returns current resident set size in MB."""
-    #     process = psutil.Process(os.getpid())
-    #     return process.memory_info().rss / 1024 / 1024
-    #
-    # gc.collect()
-    # mem_start = get_mem()
-    #
-    # # Run Simulation
-    # code = """
-    # // @mem(TrieVec);
-    # @init("AB");
-    # ABA -> AAB;
-    # A -> ABA;
-    #
-    # // ==== 4-D network ====
-    # // BA -> AB;
-    # // BC -> ACB;
-    # // A -> ACB;
-    # """
-    # flow = FlowLang(code)
-    # time = timeit.timeit(lambda: flow.evolve(18), number=1)
-    #
-    # mem_end = get_mem()
-    # print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")
-    # print(f"Total time spent: {time:.2f} seconds")
-    # flow.print()
-    # pprint([r for r in flow.rule_set.rules])  # print the rule objects
-
+    pass
     from pprint import pprint
+    import psutil
+    import os
+    import gc
+    import timeit
+
+    def get_mem():
+        """Returns current resident set size in MB."""
+        process = psutil.Process(os.getpid())
+        return process.memory_info().rss / 1024 / 1024
+
+    gc.collect()
+    mem_start = get_mem()
+
+    # Run Simulation
     code = """
-    # @mem(TrieVec);
-    @test(1, 2, 3, t=2);
-    ABA -> AAB;
-    A. -> A.A;
-
-    # ==== 4-D network ====
-    # BA -> AB;
-    # BC -> ACB;
-    # A -> ACB;
+    @init("AB");
+    ABA -> (65, 65, "B");
+    (65) -> ABA;
     """
-    ast: dict[str, Any] = parse(code)
-    pprint(ast)
+    flow = FlowLang()
+    flow.interpret(code)
 
-    i = Interpreter()
-    rules = tuple(i.interpret_instructions(ast['instructions'], ast['global_flags']))
-    pprint(rules)
+    time = timeit.timeit(lambda: flow.evolve(20), number=1)
+    mem_end = get_mem()
+    print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")
+    print(f"Total time spent: {time:.2f} seconds\n")
 
-    i.set_directive_group('inits', {'test': lambda *a, **k: (a, k)})
-    directive_results = i.interpret_directives(ast['directives'], 'inits')
-    pprint(directive_results)
+    # Evolution Table Rendering
+    from core.topologies.tooling.prettier import SpaceState1DFormatter
+    from rich.console import Console
+    formatter = SpaceState1DFormatter()
+    formatter.cell_padding = 3
+    console = Console(width=1000)
+    for event in flow.events:
+        # noinspection bad-argument-type
+        console.print(formatter(next(event.spaces)))

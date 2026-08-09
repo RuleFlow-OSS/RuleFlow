@@ -1,15 +1,20 @@
 """This module implement certain N-dimensional space states."""
-from core.engine import SpaceState, DeltaCell, Topology, Cell
-from core.topologies.vector import CellVector
+from typing import Literal
 from collections.abc import Sequence
+from core.engine import SpaceState, DeltaCell, Cell
+from core.topologies.vector import CellVector, CellVectorVault
+type VectorBackendType = Literal["vector", "vector_vault"]
 
 
 class SpaceState1D(SpaceState):
     """A SpaceState for a single dimensions (string) of space units (cells)."""
     __slots__ = 'vec',
 
-    def __init__(self, cells: Sequence[int]) -> None:
-        self.vec: CellVector = CellVector(cells)
+    def __init__(self, cells: Sequence[int], vector_backend: VectorBackendType = "vector") -> None:
+        self.vec: CellVector = {
+            'vector': CellVector,
+            'vector_vault': CellVectorVault
+        }[vector_backend](cells)
 
     def __str__(self):
         return str(self.vec)
@@ -22,7 +27,7 @@ class SpaceState1D(SpaceState):
         return self.vec
 
     def next_gen(self) -> SpaceState1D:
-        new_space: SpaceState1D = object.__new__(SpaceState1D)  # create new object without using init
+        new_space: SpaceState1D = object.__new__(SpaceState1D)
         new_space.vec = self.vec.next_gen()
         return new_space
 
@@ -77,6 +82,7 @@ class SpaceState3D(SpaceState):
 
 
 if __name__ == '__main__':
-    s = SpaceState1D([1, 2, 3, 4])
-    print(s, repr(s))
-    print(isinstance(s.vec, Topology))
+    pass
+    # s = SpaceState1D([1, 2, 3, 4])
+    # print(s, repr(s))
+    # print(isinstance(s.vec, Topology))

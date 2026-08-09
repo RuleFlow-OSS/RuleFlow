@@ -388,7 +388,7 @@ class Flow:
             event_range: slice = slice(0, -1)
     ) -> tuple[list[tuple[int, int] | None], list[list[tuple[int, int]]]]:
         """Returns the branch indices of a cell's lifespan."""
-        created_at: list[tuple[int, int]] = [None] * len(cell_ids)  # can only be created once
+        created_at: list[tuple[int, int]] = [None] * len(cell_ids)  # type: ignore
         destroyed_at: list[list[tuple[int, int]]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
         for event_idx in range(*event_range.indices(len(self.events))):
             event: Event = self.events[event_idx]

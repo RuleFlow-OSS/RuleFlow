@@ -1,19 +1,14 @@
 """The implementation for vector-topology rulesets that supports the language features.
 
-Policy:
-- Any multi-ways should have the search_buffer optimization disabled (Vec.enable_search_buffer(False)) so that it doesn't
-become corrupt when branching (one state spawning two states). We have considered coding buffer branching logic...
-however, that does not cover everything as Engine.RuleSet.apply() with group_break=False will not branch the buffer (forgot why).
-In the future, we may consider making the search_buffer branch-able (really, it is already possible by manually using Vec.search_buffer.copy()).
-
 Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
 """
 from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self, Callable
+import numpy as np
 from core.numlib import INF
 from core.signals import Signal
 from core.topologies.nd_space import SpaceState1D as SpaceState
-from core.topologies.tooling.finder import VectorRegexSearch, VectorLiteralSearch
+from core.topologies.tooling.searcher import VectorRegexSearch, VectorSearch
 from core.engine import (
     Cell,
     Rule as RuleABC,
@@ -25,7 +20,7 @@ from core.engine import (
 
 type SelectorCallable = Callable[[SpaceState], Iterator[tuple[int, int]]]  # The callable is passed a SpaceState and returns span matches
 type TargetCallable = Callable[[SpaceState, tuple[int, int]], Sequence[int]]  # The callable takes the SpaceState and match span (for context information) and returns the target sequence.
-type Finder = VectorRegexSearch | VectorLiteralSearch
+
 
 class Selector(NamedTuple):
     type: Literal["literal", "regex", "range", "callable"]
@@ -65,11 +60,14 @@ class BaseRule(RuleABC):
         'life': 'lifespan',
     }
 
-    def __init__(self, selector: Sequence[Selector], target: Sequence[Target], finder: Finder):
+    def __init__(self, selector: Sequence[Selector], target: Sequence[Target],
+                 regex_searcher: VectorRegexSearch,
+                 literal_searcher: VectorSearch):
         super().__init__()
         self.selector: Sequence[Selector] = selector  # used by self.match()
         self.target: Sequence[Target] = target  # used by self.apply()  # we use Sequence because it fits our grammar more elegantly, even though it adds not functionality.
-        self.finder: Finder = finder
+        self._regex_searcher: VectorRegexSearch = regex_searcher
+        self._literal_searcher: VectorSearch = literal_searcher
 
         # Complex Functionality
         self.chain: list[BaseRule] = [self]  # so that multiple rules can be chained to this one. Each rule here is treated as though it is "self".
@@ -138,6 +136,7 @@ class BaseRule(RuleABC):
         for i, space in enumerate(spaces):
             if not self.space_range[0] <= i <= self.space_range[1]:
                 break
+            space_data: np.ndarray = space.topology.data.data
             chained: list[BaseRule] = []
             matches: list[tuple[int, int]] = []
             conflicts: set[int] = set()
@@ -147,14 +146,22 @@ class BaseRule(RuleABC):
                 for pattern in self.selector:
                     finds: Iterator[tuple[int, int]]
                     if pattern.type == 'literal':
-                        pass
+                        finds = self._literal_searcher(
+                            pattern.selector,  # type: ignore
+                            space_data
+                        )
                     elif pattern.type == 'regex':
-                        pass
+                        finds = (m.span() for m in self._regex_searcher(
+                            pattern.selector,  # type: ignore
+                            space_data
+                        ))
                     elif pattern.type == 'range':
+                        # noinspection bad-assignment
                         finds = iter((pattern.selector,))
                     elif pattern.type == 'callable':
                         finds = pattern.selector(space)
                     else: continue
+                    # noinspection unbound-local-variable
                     for j, span in enumerate(finds):
                         if not self.match_range[0] <= j <= self.match_range[1]:
                             break
@@ -213,7 +220,7 @@ class BaseRule(RuleABC):
                     if target_obj.type == 'callable':
                         target: Sequence[int] = target_obj.target(current_space, selector)
                     else:  # if target type is literal
-                        target: Sequence[int] = target_obj.target
+                        target: Sequence[int] = target_obj.target  # type: ignore
                 else:
                     target: None = None
 
@@ -277,21 +284,25 @@ class BaseRule(RuleABC):
         return modified_spaces
 
 
+# noinspection method-overriding
 class SubstitutionRule(BaseRule):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int]) -> DeltaCell:
         return space.substitute(selector, target)
 
 
+# noinspection method-overriding
 class OverwriteRule(BaseRule):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int]) -> DeltaCell:
         return space.overwrite(selector[0], target)
 
 
+# noinspection method-overriding
 class InsertionRule(BaseRule):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: Sequence[int]) -> DeltaCell:
         return space.insert(selector[0], target)
 
 
+# noinspection method-overriding
 class DeletionRule(BaseRule):
     def _call_space_modifier(self, space: SpaceState, selector: tuple[int, int], target: None) -> DeltaCell:
         return space.delete(selector)
