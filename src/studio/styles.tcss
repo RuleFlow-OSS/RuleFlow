@@ -184,15 +184,17 @@ EditorInstance {
    COMPONENT STYLES
    ========================================= */
 
-Input {
-    width: 1fr;
+Input, Checkbox, RadioSet, SelectionList {
     background: #00000000;
-    border: round #7a7a7a;
+    border: round #918DAE;
 }
 
-Input:focus {
-    border: round #007acc;
-    background-tint: #252526;
+Input {
+    width: 1fr;
+    &:focus {
+        border: round #007acc;
+        background-tint: #00000000;
+    }
 }
 
 RichLog {
@@ -202,7 +204,11 @@ RichLog {
 Collapsible {
     padding-right: 1;
     padding-bottom: 1;
+    &:focus-within {
+        background-tint: #00000000;
+    }
 }
+
 
 /* =========================================
    COMPONENT CLASSES

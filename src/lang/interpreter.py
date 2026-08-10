@@ -341,7 +341,7 @@ if __name__ == "__main__":
 
     # Run Simulation
     code = """
-    @init("AB");
+    @init(("A", 66));
     ABA -> (65, 65, "B");
     (65) -> ABA;
     """
@@ -357,7 +357,7 @@ if __name__ == "__main__":
     from core.topologies.tooling.prettier import SpaceState1DFormatter
     from rich.console import Console
     formatter = SpaceState1DFormatter()
-    formatter.cell_padding = 3
+    formatter.cell_width = 3
     console = Console(width=1000)
     for event in flow.events:
         # noinspection bad-argument-type

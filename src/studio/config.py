@@ -11,6 +11,7 @@ PROJECTS_LIST_PATH: Path = USER_DATA_DIR_PATH.joinpath('projects.json')
 HIDDEN_FILE_PATTERNS: list[str] = ["settings.yaml"]  # files that we do NOT want displayed to the user
 DEFAULT_SYNTAX_HIGHLIGHTING: dict[str, str] = {
     '.py': 'python',
+    '.wl': 'python',
     '.yml': 'yaml',
     '.yaml': 'yaml',
     '.md': 'markdown',

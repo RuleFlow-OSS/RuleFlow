@@ -3,7 +3,7 @@ This plugin provides an exploratory environment for the evolutions of cellular s
 """
 # Textual Imports
 from rich.text import Text
-from textual.widgets import (Collapsible, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList)
+from textual.widgets import (Collapsible, Button, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList, RadioSet)
 from textual.widgets.data_table import CellKey
 from textual.widget import Widget
 from textual.coordinate import Coordinate
@@ -16,7 +16,7 @@ from typing import Iterator, Sequence
 from core.numlib import INF, str_to_num, is_infinity
 from core.engine import Event as FlowEvent, Cell as FlowCell, DeltaCell, DeltaSpace, DeltaSpaces
 from core.topologies.nd_space import SpaceState1D as SpaceState
-from core.topologies.prettier import SpaceState1DFormatter
+from core.topologies.tooling.prettier import SpaceState1DFormatter
 from core.signals import Signal
 from lang.implementation import BaseRule
 from studio.model import Plugin
@@ -77,7 +77,7 @@ class RulesetDashboard(VerticalScroll):
 
 class P(Plugin):
     name = 'explore'
-    file_types = ['.flow', '.pflow']
+    file_types = ['.flow', '.pflow', '.wpflow']
 
     @property
     def flow(self) -> FlowLang:
@@ -90,9 +90,10 @@ class P(Plugin):
 
         # attributes
         self._render_range: tuple[int, int, int] = (-100, INF, 1)
-        self._space_columns_limit: int = 1
+        self._space_coordinate: int = 0  # the render_range part is used for the x in the (x, y) of this coordinate
+        self._raw_space_columns_limit: int = 1
         self._hidden_space_columns: set[int] = set()
-        self._columns_control_bitmap: list[bool] = [True, False, False, False, False, False]
+        self._columns_control_bitmap: list[bool] = [False] * 10
 
         # connect model signals
         self.flow.on_evolved_n.connect(self.on_evolved)
@@ -118,45 +119,88 @@ class P(Plugin):
         self.render_range = Input(value='-100:', placeholder='e.g. -10: or 3:10', id='render-limit')
         self.render_range.border_title = 'Render Range'
         yield self.render_range
+        self.space_coordinate = Input(str(self._space_coordinate), type='integer', id='space-coordinate')
+        self.space_coordinate.border_title = 'Space Coordinate'
+        yield self.space_coordinate
         self.show_ruleset = Checkbox('Show Ruleset', value=True, id='show-ruleset')
         yield self.show_ruleset
 
         with Collapsible(title='Column Controls', collapsed=False):
             control_bits = self._columns_control_bitmap
+            controls = (
+                "Space Index",
+                "Cell Count",
+                "Created Cells",
+                "Destroyed Cells",
+                "Causal Distance",
+                "Causally Connected",
+                "├─ Show List",
+                "│  ╰─ Sorted",
+                "╰─ Unique",
+                "   ╰─ Separate",
+            )
+
             self.column_controls = SelectionList(
-                Selection("Event Indices", 0, control_bits[0]),
-                Selection("Causal Distance", 1, control_bits[1]),
-                Selection("Causally Connected", 2, control_bits[2]),
-                Selection(" ├─ Unique", 3, control_bits[3]),
-                Selection(" ├─ Sorted", 4, control_bits[4]),
-                Selection(" ╰─ Counted", 5, control_bits[5]),
+                *(Selection(text, idx, control_bits[idx])
+                  for idx, text in enumerate(controls)),
                 id='column-controls'
             )
-            self._rebuild_columns(rebuild_rows=False)  # must be called here or sometime after to initiated columns.
+            self._rebuild_columns(rebuild_rows=False)  # must be called here or sometime after to initiate columns.
             yield self.column_controls
-            self.space_columns_limit = Input(str(self._space_columns_limit), type='integer', id='space-columns-limit')
-            self.space_columns_limit.border_title = 'Space Columns Limit'
-            yield self.space_columns_limit
-            self.hidden_space_columns = Input(placeholder='e.g. 5, 10:15, 20', id='hidden-space-columns')
-            self.hidden_space_columns.border_title = 'Hidden Space Columns'
-            yield self.hidden_space_columns
+
+            # raw space controls
+            self.show_raw_space = Input(placeholder='e.g. 5, 10:15, 20', id='show-raw-space')
+            self.show_raw_space.border_title = 'Show Raw Space'
+            yield self.show_raw_space
+            self.hide_raw_space = Input(placeholder='e.g. 5, 10:15, 20', id='hide-raw-space')
+            self.hide_raw_space.border_title = 'Hide Raw Space'
+            yield self.hide_raw_space
+            self.raw_space_columns_limit = Input(str(self._raw_space_columns_limit), type='integer', id='space-columns-limit')
+            self.raw_space_columns_limit.border_title = 'Raw Space Columns Limit'
+            yield self.raw_space_columns_limit
 
         with Collapsible(title='Cell Rendering', collapsed=False):
-            self.style_controls = SelectionList(
+            self.cell_width = Input('3', type='integer', id='cell-width')
+            self.cell_width.border_title = 'Cell Width'
+            yield self.cell_width
+
+            # property based controls
+            self.encode_property = RadioSet('Quanta', 'Generation', 'Identity')
+            self.encode_property.border_title = 'Encode Property'
+            yield self.encode_property
+            self.style_property = RadioSet('Quanta', 'Generation', 'Identity')
+            self.style_property.border_title = 'Style Property'
+            yield self.style_property
+
+            # general controls
+            self.render_controls = SelectionList(
                 Selection("Cell Styling", 0, True),
-                Selection(" ╰─ On Symbol", 1, False),
+                Selection("├─ On Symbol", 1, False),
+                Selection("╰─ Clear on Override", 4, False),
                 Selection("Show Symbols", 2, True),
-                Selection("Cell Padding", 3, True),
-                Selection("Clear on Override", 4, False),
-                id='style-controls'
+                Selection("╰─ Encode Ordinals", 3, True),
+                id='render-controls'
             )
-            yield self.style_controls
-            self.style_map = Input("auto", placeholder='e.g. auto or A: red', id='style-map')
+            self.render_controls.border_title = 'Render Controls'
+            yield self.render_controls
+
+            # highlight controls
+            self.highlight_generations = Input(placeholder='1, 2: bold; a: red', id='highlight-gens')
+            self.highlight_generations.border_title = 'Highlight Generations'
+            yield self.highlight_generations
+            self.highlight_ids = Input(placeholder='a, b: red; 3: blue', id='highlight-ids')
+            self.highlight_ids.border_title = 'Highlight IDs'
+            yield self.highlight_ids
+
+            # overrides
+            self.style_map = Input("auto", placeholder='1, a: red; 2, b: blue', id='style-map')
             self.style_map.border_title = 'Style Override'
             yield self.style_map
-            self.symbol_map = Input("auto", placeholder='e.g. auto or A: Z', id='symbol-map')
+            self.symbol_map = Input("auto", placeholder='1, a: X; 2: Y', id='symbol-map')
             self.symbol_map.border_title = 'Symbol Map'
             yield self.symbol_map
+
+            yield Button('↻ Cache Refresh', id='refresh-cache')
 
         with Collapsible(title='Hover Explorer', collapsed=False):
             self.hovered_info_label = Label()
@@ -178,7 +222,7 @@ class P(Plugin):
             try:
                 rs: list[str] = e.value.strip().split(':')
                 if len(rs) == 2: rs.append('')  # it must always be 3 things
-                self._render_range = (
+                self._render_range = (  # type: ignore
                     int(rs[0]) if rs[0] else 0,
                     str_to_num(rs[1]) if rs[1] else INF,
                     abs(int(rs[2])) if rs[2] else 1
@@ -193,13 +237,13 @@ class P(Plugin):
                 v: int = int(e.value.strip())
                 if not 0 <= v <= 1000:
                     raise ValueError
-                self._space_columns_limit = int(e.value)
+                self._raw_space_columns_limit = int(e.value)
                 self._rebuild_columns()
             except:
                 self.view.notify('Invalid column space limit. Value must be between 0 and 1000.', severity='warning')
-                e.input.value = str(self._space_columns_limit)
+                e.input.value = str(self._raw_space_columns_limit)
 
-        elif _id == 'hidden-space-columns':
+        elif _id == 'hide-raw-space':
             try:
                 self._hidden_space_columns.clear()
                 values = e.value.replace(' ', '').split(',')
@@ -222,7 +266,7 @@ class P(Plugin):
             self._handle_styling_update()
 
         elif _id == 'hover-style':
-            self.space_state_formatter.highlighted_cell_style = e.value.strip()
+            self.space_state_formatter.high = e.value.strip()
 
     def handle_selection_toggle(self, e: SelectionList.SelectionToggled):
         _id: str = e.selection_list.id
@@ -231,7 +275,7 @@ class P(Plugin):
             for i in e.selection_list.selected:
                 self._columns_control_bitmap[i] = True
             self._rebuild_columns()
-        if _id == 'style-controls':
+        if _id == 'render-controls':
             self._handle_styling_update()
 
     def handle_checkbox_change(self, e: Checkbox.Changed):
@@ -285,7 +329,7 @@ class P(Plugin):
 
     def _handle_styling_update(self):
         control_bitmap: list[bool] = [False, False, False, False, False]
-        for i in self.style_controls.selected: control_bitmap[i] = True
+        for i in self.render_controls.selected: control_bitmap[i] = True
 
         try:
             style_map: dict[str, str] = {
@@ -508,7 +552,7 @@ class P(Plugin):
         formatter: SpaceState1DFormatter = self.space_state_formatter
         cells_to_highlight: frozenset[int] = self._cell_ids_to_highlight
         hidden: set[int] = self._hidden_space_columns
-        for i in range(self._space_columns_limit):
+        for i in range(self._raw_space_columns_limit):
             try:
                 space = spaces.__next__()  # we must always increment next (even though it may be hidden, that is what makes the check work)
                 if i in hidden:
@@ -543,7 +587,7 @@ class P(Plugin):
         if self._columns_control_bitmap[2]:
             dt.add_column('Connected', key='connected')
         hidden: set[int] = self._hidden_space_columns
-        for i in range(self._space_columns_limit):
+        for i in range(self._raw_space_columns_limit):
             if i in hidden:
                 continue
             dt.add_column(_:=str(i), key=_)

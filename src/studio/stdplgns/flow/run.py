@@ -4,12 +4,12 @@ This plugin provides basic running/undoing features, hot-reload, and several oth
 # Textual Imports
 from textual.widgets import Collapsible, TabPane, Input, Checkbox, Button, ProgressBar, Label, RichLog
 from textual.widget import Widget
-from textual.containers import ScrollableContainer, Horizontal
+from textual.containers import ScrollableContainer
 from textual.timer import Timer
 from textual.worker import Worker
 
 # Standard Imports
-from typing import Iterator
+from typing import Iterator, Literal
 import time
 import psutil
 import os
@@ -21,7 +21,7 @@ from lang.interpreter import FlowLang
 
 class P(Plugin):
     name = 'run'
-    file_types = ['.flow', '.pflow']
+    file_types = ['.flow', '.pflow', '.wpflow']
 
     @property
     def flow(self) -> FlowLang:
@@ -172,10 +172,11 @@ class P(Plugin):
 
         # execute the FlowLang
         try:
-            if self.model.file_path.suffix == '.pflow':
+            if self.model.file_path.suffix in ('.pflow', '.wpflow'):
+                suffix: Literal['pflow', 'wpflow'] = self.model.file_path.suffix[1:]  # type: ignore
                 args = eval(self.exec_args.value) if self.exec_args.value else ()
                 kwargs = eval(f'(lambda **k: k)({self.exec_kwargs.value})') if self.exec_kwargs.value else {}
-                self.flow.interpret(self.view.code_editor_text_area.text, *args, bootstrapped=True, **kwargs)
+                self.flow.interpret(self.view.code_editor_text_area.text, *args, bootstrapped=suffix, **kwargs)
             else:
                 self.flow.interpret(self.view.code_editor_text_area.text)
         except Exception as e:

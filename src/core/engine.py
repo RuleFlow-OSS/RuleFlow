@@ -364,7 +364,7 @@ class Flow:
         """Used to safely interrupt any long-running methods in a thread."""
         self._dirty_thread = True
 
-    def walk_branch(self, branch_coord: tuple[int, int]) -> Iterator[SpaceState]:
+    def walk_branch(self, branch_coord: tuple[int, int], steps: int = -1) -> Iterator[SpaceState]:
         """Each branch has a unique access index (space index, event index)... this is the best way to walk up the event tree from a particular branch leaf."""
         event_idx, space_idx = branch_coord
         try:
@@ -377,6 +377,10 @@ class Flow:
             while (nb := branch.parent_delta) is not branch:
                 yield branch.input_space
                 branch = nb
+                if steps != -1:
+                    steps -= 1
+                    if steps == 0:
+                        break
         except StopIteration:
             raise IndexError("The space index is out of range.")
         except IndexError:

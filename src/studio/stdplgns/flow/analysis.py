@@ -23,7 +23,7 @@ import math
 
 class P(Plugin):
     name = 'analysis'
-    file_types = ['.flow', '.pflow']
+    file_types = ['.flow', '.pflow', '.wpflow']
 
     @property
     def flow(self) -> FlowLang:
@@ -156,8 +156,8 @@ class P(Plugin):
             select_menu="select_menu" in selected,
             filter_menu="filter_menu" in selected,
             bgcolor=self.vis_bgcolor.value.strip() or "#ffffff",
-            font_color=f_color_parsed,
-            layout=layout_parsed,
+            font_color=f_color_parsed,  # type: ignore
+            layout=layout_parsed,  # type: ignore
             heading=self.vis_heading.value.strip(),
             cdn_resources=self.vis_cdn.value
         )
@@ -240,13 +240,13 @@ class P(Plugin):
         # get the event range
         rs: list[str] = self.causal_network_event_range.value.split(':')
         if len(rs) == 2: rs.append('')  # it must be 3 things
-        r = (
+        r = slice(
             int(rs[0]) if rs[0] else 0,
             str_to_num(rs[1]) if rs[1] else INF,
             abs(int(rs[2])) if rs[2] else 1
         )
         self._causal_graph = EventCausalityGraph().build_from_flow(self.flow, r, self.collapse_edges.value)
-        self._update_causal_metrics_table(self._causal_graph)
+        self._update_causal_metrics_table(self._causal_graph)  # type: ignore
 
     def _update_causal_metrics_table(self, g: EventCausalityGraph) -> None:
         """Calculates causal graph metrics and updates the Textual DataTable."""
