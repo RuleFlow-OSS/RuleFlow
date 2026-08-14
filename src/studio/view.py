@@ -20,7 +20,7 @@ from textual.widget import Widget
 from textual.widgets import (
     DirectoryTree as _DirectoryTree, TextArea, Button, Label,
     Select, TabbedContent, OptionList, Input, SelectionList,
-    Footer, ContentSwitcher, Static, Checkbox, Rule
+    Footer, ContentSwitcher, Static, Checkbox, Rule, RadioSet
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on
@@ -267,6 +267,7 @@ class EditorInstance(Widget):
         self.sig_input_submit: Signal[Input.Changed] = Signal()
         self.sig_selection_list_toggled: Signal[SelectionList.SelectionToggled] = Signal()
         self.sig_select_changed: Signal[Select.Changed] = Signal()
+        self.sig_radio_set_changed: Signal[RadioSet.Changed] = Signal()
 
         # ==== Model Interface ====
         self.MODEL: model.Model = model.Model(
@@ -298,8 +299,13 @@ class EditorInstance(Widget):
 
     @on(Select.Changed)
     def _emit_select_changed(self, event: Select.Changed) -> None:
-        """Handle emitting the select changed signal"""
+        """Handle emitting the Select changed signal"""
         self.sig_select_changed.emit(event)
+
+    @on(RadioSet.Changed)
+    def _emit_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        """Handle emitting the RadioSet changed signal"""
+        self.sig_radio_set_changed.emit(event)
 
     # ==== Composition ====
     def compose(self) -> ComposeResult:

@@ -245,6 +245,12 @@ class Event:
         return '[' + ', '.join(str(space) for space in self.spaces) + ']'
 
 
+class Coordinate(NamedTuple):
+    """A unique branch (useful for multi-ways)"""
+    event_idx: int
+    space_idx: int
+
+
 class Flow:
     """The base class for a rule flow, additional behavior should be implemented by subclassing this class."""
 
@@ -364,7 +370,7 @@ class Flow:
         """Used to safely interrupt any long-running methods in a thread."""
         self._dirty_thread = True
 
-    def walk_branch(self, branch_coord: tuple[int, int], steps: int = -1) -> Iterator[SpaceState]:
+    def walk_branch(self, branch_coord: Coordinate, steps: int = -1) -> Iterator[SpaceState]:
         """Each branch has a unique access index (space index, event index)... this is the best way to walk up the event tree from a particular branch leaf."""
         event_idx, space_idx = branch_coord
         try:
@@ -390,18 +396,18 @@ class Flow:
             self,
             cell_ids: Sequence[int],
             event_range: slice = slice(0, -1)
-    ) -> tuple[list[tuple[int, int] | None], list[list[tuple[int, int]]]]:
+    ) -> tuple[list[Coordinate | None], list[list[Coordinate]]]:
         """Returns the branch indices of a cell's lifespan."""
-        created_at: list[tuple[int, int]] = [None] * len(cell_ids)  # type: ignore
-        destroyed_at: list[list[tuple[int, int]]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
+        created_at: list[Coordinate] = [None] * len(cell_ids)  # type: ignore
+        destroyed_at: list[list[Coordinate]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
         for event_idx in range(*event_range.indices(len(self.events))):
             event: Event = self.events[event_idx]
             for space_idx, (dss, ds, dc, s) in enumerate(event.spaces_with_metadata):
                 for i, cell_id in enumerate(cell_ids):
                     if not created_at[i] and cell_id in (c.id for c in dc.new_cells):
-                        created_at[i] = (event_idx, space_idx)
+                        created_at[i] = Coordinate(event_idx, space_idx)
                     if cell_id in (c.id for c in dc.destroyed_cells):
-                        destroyed_at[i].append((event_idx, space_idx))
+                        destroyed_at[i].append(Coordinate(event_idx, space_idx))
         return created_at, destroyed_at
 
     def __str__(self) -> str:

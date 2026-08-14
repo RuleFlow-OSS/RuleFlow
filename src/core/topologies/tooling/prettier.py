@@ -7,7 +7,6 @@ TODO:
 """
 from typing import Iterator, Iterable
 from rich.text import Text
-from rich.console import Console
 from core.topologies.nd_space import SpaceState1D
 from core.topologies.tooling.rff_encoding import chr_rff
 from typing import Literal

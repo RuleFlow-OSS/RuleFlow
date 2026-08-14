@@ -30,6 +30,17 @@ class P(Plugin):
         return self.model.data.setdefault('flow', FlowLang())
 
     def on_initialized(self) -> None:
+        # properties
+        self._export_formats: list[tuple[str, int]] = [
+            ("Gephi", 0),
+            ("GraphML", 1),
+            ("Sparse6", 2),
+            ("Graph6", 3),
+            ("GML", 4),
+            ("Adjacency List", 5),
+            ("Multiline Adjacency", 6)
+        ]
+
         # tools
         self._causal_graph: EventCausalityGraph | None = None
 
@@ -45,11 +56,8 @@ class P(Plugin):
             self.collapse_edges = Checkbox('Collapse Edges')
             yield self.collapse_edges
             yield Label("\nPersistence")
-            self.export_format = Select(
-                [("Gephi", 0), ("GraphML", 1), ("Sparse6", 2), ("Graph6", 3), ("GML", 4), ("Adjacency List", 5), ("Multiline Adjacency", 6)],
-                allow_blank=False
-            )
-            yield self.export_format
+            self.causal_network_export_format = Select(self._export_formats, allow_blank=False)
+            yield self.causal_network_export_format
             yield Button('Export as Format', id='export-graph')
 
         with Collapsible(title='VisJS Viewer', collapsed=False):
@@ -108,6 +116,17 @@ class P(Plugin):
                 Selection("Renderer", "renderer", False)
             )
             yield self.vis_buttons_filter
+
+        # (FUTURE IMPROVEMENT FOR MULTIWAY TREE ANALYSIS)
+        # with Collapsible(title='Multiway Tree', collapsed=False):
+        #     yield Button('Build Multiway Tree', id='build-multiway-tree', variant="primary")
+        #     self.multiway_tree_event_range = Input(':64')
+        #     self.multiway_tree_event_range.border_title = 'Multi'
+        #     yield self.multiway_tree_event_range
+        #     yield Label("\nPersistence")
+        #     self.multiway_tree_export_format = Select(self._export_formats, allow_blank=False)
+        #     yield self.multiway_tree_export_format
+        #     yield Button('Export as Format', id='export-multiway-tree')
 
         with Collapsible(title='Causal Distribution'):
             yield Label('Summery Function:')
@@ -192,14 +211,14 @@ class P(Plugin):
         funcs = [nx.write_gexf, nx.write_graphml, nx.write_sparse6, nx.write_graph6,
                  nx.write_gml, nx.write_adjlist, nx.write_multiline_adjlist]
         stems = ['.gexf', '.graphml', '.sparse6', '.graph6', '.gml', '.adjlist', '.multi_adjlist']
-        stem: str = stems[self.export_format.value]
+        stem: str = stems[self.causal_network_export_format.value]
         path: str = str(
             self.model.project_path.joinpath(
                 self.model.file_path.name + f'_at_{self.causal_network_event_range.value.replace(':', '_')}' + stem
             )
         )
         try:
-            funcs[self.export_format.value](self._causal_graph, path)
+            funcs[self.causal_network_export_format.value](self._causal_graph, path)
             self.view.notify(f'Successfully exported at "{path}"')
         except Exception as e:
             self.view.notify(f"Failed to export graph: {str(e)}", severity="error")

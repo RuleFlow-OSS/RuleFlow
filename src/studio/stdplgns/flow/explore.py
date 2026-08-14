@@ -1,6 +1,14 @@
 """
 This plugin provides an exploratory environment for the evolutions of cellular systems.
+
+Policy:
+- This plugin should primarily focus on a single space at a time (given by some coordinate system). Another plugin
+(or table widget within this plugin) should be developed for multiple space explorations.
+
+Future Features:
+- ctrl+h when hovering over a cell should hold the highlight (add it to the highlight setting).
 """
+
 # Textual Imports
 from rich.text import Text
 from textual.widgets import (Collapsible, Button, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList, RadioSet)
@@ -14,7 +22,7 @@ from textual.events import MouseMove
 # Standard Imports
 from typing import Iterator, Sequence
 from core.numlib import INF, str_to_num, is_infinity
-from core.engine import Event as FlowEvent, Cell as FlowCell, DeltaCell, DeltaSpace, DeltaSpaces
+from core.engine import Event as FlowEvent, Cell as FlowCell, DeltaCell, DeltaSpace, DeltaSpaces, Coordinate as SpaceCoordinate
 from core.topologies.nd_space import SpaceState1D as SpaceState
 from core.topologies.tooling.prettier import SpaceState1DFormatter
 from core.signals import Signal
@@ -40,7 +48,7 @@ class DataTable(_DataTable):
             return
         coord = Coordinate(meta["row"], meta["column"])
         start_x = 0
-        PADDING = self.cell_padding
+        padding = self.cell_padding
         columns = list(self.columns.values())
         for i in range(coord.column):  # Calculate start_x ONLY for columns BEFORE the hovered one
             col = columns[i]
@@ -49,11 +57,11 @@ class DataTable(_DataTable):
             else:
                 base_width = col.width or col.content_width or 0
             # Add this column's total footprint (width + 1 left pad + 1 right pad)
-            start_x += base_width + 2 * PADDING
+            start_x += base_width + 2 * padding
         # Calculate the specific character offset inside the cell
         virtual_x = event.x + self.scroll_offset.x
         # Subtract start_x to zero out the column, then subtract 1 for THIS column's left padding
-        char_offset = (virtual_x - start_x) - PADDING
+        char_offset = (virtual_x - start_x) - padding
 
         # emit the signal
         self.sig_mouse_over_inner_cell.emit(coord, char_offset)
@@ -85,15 +93,32 @@ class P(Plugin):
 
     def on_initialized(self) -> None:
         # tools
-        self.space_state_formatter: SpaceState1DFormatter = SpaceState1DFormatter()
+        self.space_formatter: SpaceState1DFormatter = SpaceState1DFormatter()
         self._cell_ids_to_highlight: frozenset[int] = frozenset()
 
         # attributes
-        self._render_range: tuple[int, int, int] = (-100, INF, 1)
-        self._space_coordinate: int = 0  # the render_range part is used for the x in the (x, y) of this coordinate
-        self._raw_space_columns_limit: int = 1
-        self._hidden_space_columns: set[int] = set()
-        self._columns_control_bitmap: list[bool] = [False] * 10
+        self._render_range: tuple[int, int, int] = (-100, -1, 1)
+        self._space_coordinate: SpaceCoordinate = SpaceCoordinate(-1, 0)
+        self._columns_controls = (  # (control title, column title | None, control key, default value)
+            ("Space Index", 'Space Idx', 'space-idx', True),
+            ("Cell Count", 'Cells', 'cell-count', False),
+            ("Created Cells", 'Created', 'created-cells', False),
+            ("Destroyed Cells", 'Destroyed', 'destroyed-cells', False),
+            ("Causal Distance", 'Distance', 'causal-distance', False),
+            ("Causally Connected", 'Connected', 'causally-connected', False),
+            ("├─ Show List", None, 'show-causal-list', False),
+            ("│  ╰─ Sorted", None, 'show-sorted-causal-list', False),
+            ("╰─ Unique", None, 'show-unique-causal-list', False),
+            ("   ╰─ Separate", None, 'show-seperate-unique-causal-list', False),
+            ("Show Space", None, 'show-space', True)
+        )
+        self._render_controls = (  # (control title, control key, default value)
+            ("Cell Styling", 'cell-styling', True),
+            ("├─ On Symbol", 'cell-styling-on-symbol', False),
+            ("╰─ Clear on Override", 'clear-styling-on-override', False),
+            ("Show Symbols", 'show-symbols', True),
+            ("╰─ Encode Ordinals", 'show-encoded-symbols', True),
+        )
 
         # connect model signals
         self.flow.on_evolved_n.connect(self.on_evolved)
@@ -111,53 +136,23 @@ class P(Plugin):
         # temp trackers
         self.__last_hover_coord_and_offset: tuple[Coordinate, int] = (Coordinate(0, 0), 0)
 
-    def _column_control_bitmap_zero_out(self):
-        """Zeros out the column bitmap"""
-        self._columns_control_bitmap = [False for _ in range(len(self._columns_control_bitmap))]
-
     def controls(self) -> Iterator[Widget]:
-        self.render_range = Input(value='-100:', placeholder='e.g. -10: or 3:10', id='render-limit')
+        self.render_range = Input(value='-100:', placeholder='e.g. -10: or 3:10', id='render-range')
         self.render_range.border_title = 'Render Range'
         yield self.render_range
-        self.space_coordinate = Input(str(self._space_coordinate), type='integer', id='space-coordinate')
+        self.space_coordinate = Input(str(self._space_coordinate), placeholder='e.g. (4, 2)', id='space-coordinate')  # (FUTURE SUPPORT FOR MULTIPLE SPACE COLUMNS)
         self.space_coordinate.border_title = 'Space Coordinate'
         yield self.space_coordinate
         self.show_ruleset = Checkbox('Show Ruleset', value=True, id='show-ruleset')
         yield self.show_ruleset
 
         with Collapsible(title='Column Controls', collapsed=False):
-            control_bits = self._columns_control_bitmap
-            controls = (
-                "Space Index",
-                "Cell Count",
-                "Created Cells",
-                "Destroyed Cells",
-                "Causal Distance",
-                "Causally Connected",
-                "├─ Show List",
-                "│  ╰─ Sorted",
-                "╰─ Unique",
-                "   ╰─ Separate",
-            )
-
             self.column_controls = SelectionList(
-                *(Selection(text, idx, control_bits[idx])
-                  for idx, text in enumerate(controls)),
+                *(Selection(c[0], c[2], c[3]) for c in self._columns_controls),
                 id='column-controls'
             )
             self._rebuild_columns(rebuild_rows=False)  # must be called here or sometime after to initiate columns.
             yield self.column_controls
-
-            # raw space controls
-            self.show_raw_space = Input(placeholder='e.g. 5, 10:15, 20', id='show-raw-space')
-            self.show_raw_space.border_title = 'Show Raw Space'
-            yield self.show_raw_space
-            self.hide_raw_space = Input(placeholder='e.g. 5, 10:15, 20', id='hide-raw-space')
-            self.hide_raw_space.border_title = 'Hide Raw Space'
-            yield self.hide_raw_space
-            self.raw_space_columns_limit = Input(str(self._raw_space_columns_limit), type='integer', id='space-columns-limit')
-            self.raw_space_columns_limit.border_title = 'Raw Space Columns Limit'
-            yield self.raw_space_columns_limit
 
         with Collapsible(title='Cell Rendering', collapsed=False):
             self.cell_width = Input('3', type='integer', id='cell-width')
@@ -174,11 +169,7 @@ class P(Plugin):
 
             # general controls
             self.render_controls = SelectionList(
-                Selection("Cell Styling", 0, True),
-                Selection("├─ On Symbol", 1, False),
-                Selection("╰─ Clear on Override", 4, False),
-                Selection("Show Symbols", 2, True),
-                Selection("╰─ Encode Ordinals", 3, True),
+                *(Selection(*c) for c in self._render_controls),
                 id='render-controls'
             )
             self.render_controls.border_title = 'Render Controls'
@@ -203,22 +194,30 @@ class P(Plugin):
             yield Button('↻ Cache Refresh', id='refresh-cache')
 
         with Collapsible(title='Hover Explorer', collapsed=False):
+            self.hover_active_ruleset = Checkbox('Hover Active Ruleset', id='hover-active-ruleset')
+            yield self.hover_active_ruleset
+
             self.hovered_info_label = Label()
             self._reset_hovered_info_label()
             yield self.hovered_info_label
-            self.hover_explorer = Checkbox('Hover Explorer', id='hover-explorer')
-            yield self.hover_explorer
-            self.hover_ruleset_enabled = Checkbox('Hovered Event Ruleset', disabled=True, id='hover-ruleset-enabled')
-            yield self.hover_ruleset_enabled
-            self.hover_style = Input("on yellow", placeholder='e.g. on red or bold blue', id='hover-style')
-            self.hover_style.border_title = 'Hover Style'
-            yield self.hover_style
+
+            self.id_hover = Checkbox('Highlight Identity', id='id-hover')
+            yield self.id_hover
+            self.id_hover_style = Input("on yellow", placeholder='e.g. on red or bold blue', id='id-hover-style')
+            self.id_hover_style.border_title = 'Identity Style'
+            yield self.id_hover_style
+
+            self.gen_hover = Checkbox('Highlight Generation', id='gen-hover')
+            yield self.gen_hover
+            self.gen_hover_style = Input("on blue", placeholder='e.g. on red or bold blue', id='gen-hover-style')
+            self.gen_hover_style.border_title = 'Generation Style'
+            yield self.gen_hover_style
 
         yield Label()
 
     def handle_input_submit(self, e: Input.Submitted):
-        _id: str = e.input.id
-        if _id == 'render-limit':
+        _id: str | None = e.input.id
+        if _id == 'render-range':
             try:
                 rs: list[str] = e.value.strip().split(':')
                 if len(rs) == 2: rs.append('')  # it must always be 3 things
@@ -232,65 +231,35 @@ class P(Plugin):
                 self.view.notify('Invalid render range.', severity='warning')
                 e.input.value = '{0}:{1}:{2}'.format(*self._render_range)
 
-        elif _id == 'space-columns-limit':
-            try:
-                v: int = int(e.value.strip())
-                if not 0 <= v <= 1000:
-                    raise ValueError
-                self._raw_space_columns_limit = int(e.value)
-                self._rebuild_columns()
-            except:
-                self.view.notify('Invalid column space limit. Value must be between 0 and 1000.', severity='warning')
-                e.input.value = str(self._raw_space_columns_limit)
-
-        elif _id == 'hide-raw-space':
-            try:
-                self._hidden_space_columns.clear()
-                values = e.value.replace(' ', '').split(',')
-                if values[0] != '':
-                    for r in values:
-                        if ':' in r:
-                            a, b = r.split(':'); a, b = abs(int(a)), abs(int(b))
-                            if a > 1000 or b > 1000: raise ValueError
-                            for i in range(a, b + 1):
-                                self._hidden_space_columns.add(i)
-                        else:
-                            a = abs(int(r))
-                            if a > 1000: raise ValueError
-                            self._hidden_space_columns.add(a)
-                self._rebuild_columns()
-            except:
-                self.view.notify('Invalid hidden ranges. Values/Ranges must be between 0 and 1000.', severity='warning')
-
         elif _id in ('style-map', 'symbol-map'):
             self._handle_styling_update()
 
         elif _id == 'hover-style':
-            self.space_state_formatter.high = e.value.strip()
+            self.space_formatter.high = e.value.strip()
 
     def handle_selection_toggle(self, e: SelectionList.SelectionToggled):
         _id: str = e.selection_list.id
         if _id == 'column-controls':
-            self._column_control_bitmap_zero_out()
+            self._render_control_bitmap_zero_out()
             for i in e.selection_list.selected:
-                self._columns_control_bitmap[i] = True
+                self._enabled_columns[i] = True
             self._rebuild_columns()
         if _id == 'render-controls':
             self._handle_styling_update()
 
     def handle_checkbox_change(self, e: Checkbox.Changed):
-        _id: str = e.checkbox.id
+        _id: str | None = e.checkbox.id
         if _id == 'hover-explorer':
-            self.data_table.enabled_sig_mouse_over_space_cell = e.value
-            self.hover_ruleset_enabled.disabled = not e.value
+            self.data_table.enabled_sig_mouse_over_space_cell = e.value  # type: ignore
+            self.hover_active_ruleset.disabled = not e.value
             if not e.value:
-                self.hover_ruleset_enabled.value = self.hovered_ruleset_container.display = False
+                self.hover_active_ruleset.value = self.hovered_ruleset_container.display = False
                 self._reset_hovered_info_label()
                 self._cell_ids_to_highlight = frozenset()
-        if _id == 'hover-ruleset-enabled' and self.hover_explorer.value:
+        if _id == 'hover-active-ruleset' and self.hover_active_ruleset.value:
             self.hovered_ruleset_container.display = e.value
             if not e.value:
-                self.hovered_ruleset_table.clear()
+                self.active_ruleset_table.clear()
         if _id == 'show-ruleset':
             self.ruleset_container.display = e.value
 
@@ -299,16 +268,16 @@ class P(Plugin):
         self.ruleset_table = _DataTable(id='ruleset-table', show_cursor=False)
         self.ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group')
         self.ruleset_container = Vertical(
-            Label('[bold] Active Ruleset Table [/bold]'),
+            Label('[bold] Ruleset Table [/bold]'),
             self.ruleset_table
         )
 
         # Ruleset Table
-        self.hovered_ruleset_table = _DataTable(id='hovered-ruleset-table', show_cursor=False)
-        self.hovered_ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group')
+        self.active_ruleset_table = _DataTable(id='active-ruleset-table', show_cursor=False)
+        self.active_ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group')
         self.hovered_ruleset_container = Vertical(
-            Label('[bold] Hovered Event Ruleset Table [/bold]'),
-            self.hovered_ruleset_table,
+            Label('[bold] Active Ruleset Table [/bold]'),
+            self.active_ruleset_table,
         )
         self.hovered_ruleset_container.display = False
 
@@ -329,8 +298,8 @@ class P(Plugin):
 
     def _handle_styling_update(self):
         control_bitmap: list[bool] = [False, False, False, False, False]
-        for i in self.render_controls.selected: control_bitmap[i] = True
-
+        for i in self.render_controls.selected:
+            control_bitmap[i] = True
         try:
             style_map: dict[str, str] = {
                 k.strip(): v.strip() for k, v in (p.split(':') for p in self.style_map.value.split(','))
@@ -343,7 +312,7 @@ class P(Plugin):
             self.view.notify('Invalid style map.', severity='error')
             return
 
-        self.space_state_formatter.config(
+        self.space_formatter.config(
             *control_bitmap[:4],
             style_map,
             control_bitmap[4],
@@ -354,16 +323,7 @@ class P(Plugin):
         self._rebuild_rows()
 
     def _reset_hovered_info_label(self):
-        self.hovered_info_label.content = """[bold]Event Info[/bold]
-• ----
-• ----
-• ----
-• ----
-• ----
-• ----
-• ----
-
-[bold]Cell Info[/bold]
+        self.hovered_info_label.content = """[bold]Cell Info[/bold]
 • ----
 • ----
 • ----
@@ -428,27 +388,18 @@ class P(Plugin):
             cell_destroyed_at: None = None
             lifespan: None = None
         connected_events = tuple(event.causally_connected_events)
-        self.hovered_info_label.content = f"""[bold]Event #{event.time} | Space #{column_idx}[/bold]
-• Branched Spaces: {len(spaces) - 1}
-• Space Size: {len(space_state)}
-• Causal Distance: {event.causal_distance_to_creation}
-• Connected Total: {len(connected_events)}
-• Connected Unique: {len(set(connected_events))}
-• Created Cells: {created_cells}
-• Destroyed Cells: {destroyed_cells}
-
-[bold]Cell #{offset}[/bold]
+        self.hovered_info_label.content = f"""[bold]Cell #{offset}[/bold]
+• Encoded: {flow_cell.quanta}
 • Quanta: {flow_cell.quanta}
-• Created at: {flow_cell.generation}
-• Destroyed at: {cell_destroyed_at}
-• Lifespan: {lifespan}
+• Generation: {flow_cell.generation}
+• Identity: {flow_cell.id}
 """
 
         # place the rule (and its chain if there is one) in the hovered ruleset table.
         if self.hover_ruleset_enabled.value:
             applied_rule: BaseRule = spaces[column_idx][0].rule
             if applied_rule:
-                self._rebuild_ruleset_table(applied_rule.chain, self.hovered_ruleset_table, hide_disabled=True, remember_old_row_length=True)
+                self._rebuild_ruleset_table(applied_rule.chain, self.active_ruleset_table, hide_disabled=True, remember_old_row_length=True)
 
     def _rebuild_ruleset_table(self, rules: Sequence[BaseRule],
                                table: DataTable,
@@ -460,7 +411,7 @@ class P(Plugin):
             for s in rule.selector:
                 sv = s.selector
                 if isinstance(sv, str | bytes):
-                    selectors.append(self.space_state_formatter.convert_pure_str(sv))
+                    selectors.append(self.space_formatter.convert_pure_str(sv))
                 else:
                     selectors.append(Text(str(sv)))
             targets: list[Text] = []
@@ -468,9 +419,9 @@ class P(Plugin):
                 tv = t.target
                 if isinstance(tv, int):
                     targets.append(Text(str(tv)))
-                else:  # when `tv` is Sequence[Cell]
-                    targets.append(self.space_state_formatter.convert_pure_str(''.join(str(c) for c in tv)))
-            return (Text(', ').join(selectors) if len(selectors) > 1 else selectors[0] if selectors else '',
+                else:  # when `tv` is Sequence[int]
+                    targets.append(self.space_formatter.convert_pure_str(''.join(str(c) for c in tv)))
+            return (Text(', ').join(selectors) if len(selectors) > 1 else selectors[0] if selectors else '',  # type: ignore
                     Text(', ').join(targets) if len(targets) > 1 else targets[0] if targets else '')
 
         old_rows: int = table.row_count
@@ -529,7 +480,7 @@ class P(Plugin):
         columns = []
 
         # Process the info columns
-        control_bitmap = self._columns_control_bitmap
+        control_bitmap = self._enabled_columns
         if control_bitmap[2]:
             if control_bitmap[3]:  # if we are collapsing it
                 connected = set(event.causally_connected_events)
@@ -549,14 +500,11 @@ class P(Plugin):
 
         # Process the space columns
         spaces: Iterator[SpaceState] = event.spaces
-        formatter: SpaceState1DFormatter = self.space_state_formatter
+        formatter: SpaceState1DFormatter = self.space_formatter
         cells_to_highlight: frozenset[int] = self._cell_ids_to_highlight
-        hidden: set[int] = self._hidden_space_columns
         for i in range(self._raw_space_columns_limit):
             try:
                 space = spaces.__next__()  # we must always increment next (even though it may be hidden, that is what makes the check work)
-                if i in hidden:
-                    continue
                 columns.append(formatter(space, cells_to_highlight))
             except StopIteration:
                 break
@@ -580,16 +528,13 @@ class P(Plugin):
         dt = self.data_table
         old_x, old_y = dt.scroll_x, dt.scroll_y
         dt.clear(columns=True)
-        if self._columns_control_bitmap[0]:
+        if self._enabled_columns[0]:
             dt.add_column('Event', key='event')
-        if self._columns_control_bitmap[1]:
+        if self._enabled_columns[1]:
             dt.add_column('Distance', key='distance')
-        if self._columns_control_bitmap[2]:
+        if self._enabled_columns[2]:
             dt.add_column('Connected', key='connected')
-        hidden: set[int] = self._hidden_space_columns
         for i in range(self._raw_space_columns_limit):
-            if i in hidden:
-                continue
             dt.add_column(_:=str(i), key=_)
         if rebuild_rows:
             self._rebuild_rows()
@@ -599,6 +544,7 @@ class P(Plugin):
         """Update the column widths as Textual does not currently do that for us when removing rows."""
         dt = self.data_table
         if 0 <= (rc:=(dt.row_count - 1)):
+            # noinspection protected-member
             dt._update_column_widths(
                 {dt.coordinate_to_cell_key(Coordinate(rc, i)) for i in range(len(dt.columns))}
             )
