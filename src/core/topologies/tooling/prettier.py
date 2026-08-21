@@ -9,7 +9,6 @@ from typing import Iterator, Iterable
 from rich.text import Text
 from core.topologies.nd_space import SpaceState1D
 from core.topologies.tooling.rff_encoding import chr_rff
-from typing import Literal
 
 
 # Color Palette (64 Colors)
@@ -41,14 +40,14 @@ class SpaceState1DFormatter:
         self.styling: bool = True
         self.style_on_background: bool = True
         self.clear_default_styles_on_override: bool = False
-        self.style_using_property: Literal["quanta", "generation", "id"] = "quanta"
+        self.style_using_property: int = 0
         self.style_mapping_override: dict[int, str] = {}
 
         # render properties
         self.show_symbols: bool = True
         self.encode_ordinals: bool = True
         self.cell_width: int = 3
-        self.encode_using_property: Literal["quanta", "generation", "id"] = "quanta"
+        self.encode_using_property: int = 0
         self.symbol_mapping_override: dict[int, str] = {}
 
     def _ordinal_style(self, o: int) -> str:
@@ -84,20 +83,19 @@ class SpaceState1DFormatter:
     def __call__(self, s: SpaceState1D) -> Text:  # TODO: maybe cache this whole function
         """Fast join using the pre-computed mapping. Also highlight specific vec matching highlight_cells_with_id."""
         rm = self.rich_cache
-        pm: dict[str, int] = {'quanta': 0, 'generation': 1, 'id': 2}
-        encode_using_property: int = pm[self.encode_using_property]
-        style_using_property: int = pm[self.style_using_property]
+        encode_using_property: int = self.encode_using_property
+        style_using_property: int = self.style_using_property
         if self.highlight_cells_with_id or self.highlight_cells_in_generation:
             def iter_cells() -> Iterator[Text]:
                 for p in zip(s.vec.data, s.vec.generations, s.vec.ids):
                     highlight_style: str = (self.highlight_cells_with_id.get(p[2], '') or
                                             self.highlight_cells_in_generation.get(p[1], ''))
                     or_: int = p[encode_using_property]
-                    os_: int = p[style_using_property]
                     if highlight_style:
                         yield rm.setdefault((or_, highlight_style), Text(self._ordinal_render(or_),
                                                                          style=highlight_style, end=''))
                     else:
+                        os_: int = p[style_using_property]
                         yield rm.setdefault((or_, os_), Text(self._ordinal_render(or_),
                                                              style=self._ordinal_style(os_), end=''))
         else:

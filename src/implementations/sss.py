@@ -31,7 +31,7 @@ class ReplacementRule(RuleABC):
         old_space: SpaceState = cast(SpaceState, rule_matches[0].space)  # we cast to satisfy the type checker
         new_space: SpaceState = old_space.next_gen()
         cell_deltas: DeltaCell = new_space.substitute(selector, self.target)
-        return (DeltaSpace(old_space, (new_space,), (cell_deltas,)),)
+        return (DeltaSpace(old_space, (new_space,), (cell_deltas,), self),)
 
 
 class SSS(Flow):

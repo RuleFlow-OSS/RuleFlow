@@ -139,7 +139,7 @@ class P(Plugin):
         yield Label()
 
     def handle_button_press(self, e: Button.Pressed):
-        _id: str = e.button.id
+        _id: str | None = e.button.id
         if _id == 'build-graph':
             self._update_causal_graph()
         elif _id == 'export-graph':
@@ -154,7 +154,7 @@ class P(Plugin):
             self.view.notify('No graph has been built yet!', severity='error')
             return
 
-        G: nx.MultiDiGraph = self._causal_graph
+        g: nx.MultiDiGraph = self._causal_graph
 
         # Get the list of selected internal string values
         selected = self.vis_toggles.selected
@@ -178,7 +178,7 @@ class P(Plugin):
             font_color=f_color_parsed,  # type: ignore
             layout=layout_parsed,  # type: ignore
             heading=self.vis_heading.value.strip(),
-            cdn_resources=self.vis_cdn.value
+            cdn_resources=self.vis_cdn.value  # type: ignore
         )
 
         # Apply the show_buttons filters based on the selection list
@@ -190,7 +190,7 @@ class P(Plugin):
                 net.show_buttons(filter_=filtered_buttons)
 
         # Ingest and Render
-        net.from_nx(G)
+        net.from_nx(g)
         try:
             if self.vis_html_path.value == 'auto':
                 html_path = str(USER_DATA_DIR_PATH.joinpath('temp_vis_js.html'))
@@ -211,14 +211,14 @@ class P(Plugin):
         funcs = [nx.write_gexf, nx.write_graphml, nx.write_sparse6, nx.write_graph6,
                  nx.write_gml, nx.write_adjlist, nx.write_multiline_adjlist]
         stems = ['.gexf', '.graphml', '.sparse6', '.graph6', '.gml', '.adjlist', '.multi_adjlist']
-        stem: str = stems[self.causal_network_export_format.value]
+        stem: str = stems[self.causal_network_export_format.value]  # type: ignore
         path: str = str(
             self.model.project_path.joinpath(
                 self.model.file_path.name + f'_at_{self.causal_network_event_range.value.replace(':', '_')}' + stem
             )
         )
         try:
-            funcs[self.causal_network_export_format.value](self._causal_graph, path)
+            funcs[self.causal_network_export_format.value](self._causal_graph, path)  # type: ignore
             self.view.notify(f'Successfully exported at "{path}"')
         except Exception as e:
             self.view.notify(f"Failed to export graph: {str(e)}", severity="error")
@@ -310,7 +310,7 @@ class P(Plugin):
         )
 
         # get summary function
-        f = (min, max, fmean)[self.summary_function.value]
+        f = (min, max, fmean)[self.summary_function.value]  # type: ignore
         self.distance_distribution.summary_function = f
         self.connected_abs_distribution.summary_function = f
         self.connected_set_distribution.summary_function = f

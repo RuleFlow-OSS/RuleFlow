@@ -38,7 +38,7 @@ class P(Plugin):
 
         # Connect flow signals to update progress bar
         self.flow.on_evolved_step.connect(self._handle_progress_updates)
-        self.flow.on_undone_step.connect(self._handle_progress_updates)
+        self.flow.on_regress_step.connect(self._handle_progress_updates)
 
         # Attributes
         self._process = psutil.Process(os.getpid())
@@ -164,6 +164,7 @@ class P(Plugin):
         # import time  # to test slowdowns
         # time.sleep(0.5)
 
+    # noinspection unbound-local-variable
     def _execute(self) -> None:
         # use self.cft to be thread-safe on textual side (according to docs on Workers)
         if self.mem_profile.value:

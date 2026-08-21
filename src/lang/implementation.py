@@ -267,15 +267,18 @@ class BaseRule(RuleABC):
                         self.on_branch.emit(rule_match, idx)
                     else:
                         break  # break out of loop if no branches are supposed to be made.
+
+            # submit space delta
+            self = top_self  # make sure we are referring to the top of the chain version of "self"
             modified_spaces.append(
                 DeltaSpace(  # use tuples for efficient storage... more efficient that way.
                     input_space=prev_space,
                     output_space=tuple(submitted_spaces),
-                    cell_deltas=tuple(submitted_cell_deltas)
+                    cell_deltas=tuple(submitted_cell_deltas),
+                    rule=self
                 )
             )
 
-        self = top_self  # make sure we are referring to the top of the chain version of "self"
         # ensure the lifespan is enforced
         self.lifespan -= 1  # will not affect infinity if so set
         if self.lifespan == 0 and modified_spaces:

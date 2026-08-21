@@ -99,9 +99,6 @@ class Rule(ABC):
 
         Note that all the code is assuming that multi-way systems take place for multiple modifications. However, if we want to modify a SpaceState, without creating branches, we must do that in the Rule itself (i.e. having entire "rulesets" within rules).
         """
-        # metadata
-        self.id: str = ''  # could be used to filter rules.
-
         # Flags (these are only those which modify default RuleSet behavior)
         self.disabled: bool = False  # if the rule is disabled (dead)
         self.group: tuple[Hashable, ...] = (0,)  # group together rules this way. Can be part of multiple groups
@@ -140,12 +137,12 @@ class RuleSet:
     def __repr__(self) -> str:
         return str(self)
 
-    def apply(self, to_spaces: Sequence[SpaceState]) -> list[DeltaSpaces]:
-        """Applies the Rules to the given spaces, and returns a sequence of the DeltaSpaceSet."""
+    def apply(self, to_spaces: Sequence[SpaceState]) -> list[DeltaSpace]:
+        """Applies the Rules to the given spaces, and returns a sequence of DeltaSpace."""
         group_management: dict = {
             # group IDs go here along with whether they are active - id: bool
         }
-        applied_rules: list[DeltaSpaces] = []
+        space_deltas: list[DeltaSpace] = []
         for rule in self.rules:
             if rule.disabled:
                 continue
@@ -154,13 +151,13 @@ class RuleSet:
                 continue
             rule_matches: Sequence[RuleMatch] = rule.match(to_spaces)
             if rule_matches:  # if there are any rule matches.
-                space_deltas: DeltaSpaces = DeltaSpaces(rule.apply(rule_matches), rule)
-                if space_deltas:  # to be robust in case a complex rule still fails (even though input matches were found we can't guarantee that it will always work)
-                    applied_rules.append(space_deltas)
+                _space_deltas: Sequence[DeltaSpace] = rule.apply(rule_matches)
+                if any(_space_deltas):  # to be robust in case a complex rule still fails (even though input matches were found we can't guarantee that it will always work)
+                    space_deltas.extend(_space_deltas)
                     if rule.group_break:
                         for g in rule.group:
                             group_management[g] = False
-        return applied_rules
+        return space_deltas
 
 
 class DeltaCell(NamedTuple):
@@ -174,35 +171,28 @@ class DeltaCell(NamedTuple):
 
 class DeltaSpace:  # returned by Rule.apply() in a Sequence[DeltaSpace]
     """Single application of a rule within Rule.apply()."""
-    __slots__ = ('input_space', 'output_space', 'cell_deltas', 'parent_delta')
+    __slots__ = ('input_space', 'output_space', 'cell_deltas', 'rule', 'parent_delta')
 
     def __init__(self, input_space: SpaceState,
                  output_space: Sequence[SpaceState],
                  cell_deltas: Sequence[DeltaCell],
-                 parent_delta: DeltaSpace = None) -> None:
+                 rule: Rule | None,
+                 parent_delta: DeltaSpace | None = None) -> None:
         self.input_space: SpaceState = input_space
         self.output_space: Sequence[SpaceState] = output_space
         self.cell_deltas: Sequence[DeltaCell] = cell_deltas  # should be aligned with output_space array
+        self.rule: Rule | None = rule
         self.parent_delta: DeltaSpace = self if parent_delta is None else parent_delta  # this is so that we can traverse the multiway tree and is why this is a slots class rather than a NamedTuple which has problems with mutable fields that are weak referenced.
 
     def __bool__(self) -> bool:
         return any(self.output_space) or any(self.cell_deltas)  # we check both to be as robust as possible... what if a rule does not return delta vec due to modifying but not adding or deleting?
 
 
-class DeltaSpaces(NamedTuple):  # returned by RuleSet.apply() in a Sequence[DeltaSpaces]
-    """All delta spaces that happened under a given rule."""
-    space_deltas: Sequence[DeltaSpace]
-    rule: Rule
-
-    def __bool__(self) -> bool:
-        return any(self.space_deltas)  # if any changes were recorded.
-
-
 # TODO: maybe cache the properties?
 @dataclass(slots=True)
 class Event:
     time: int  # also known as time - should be sequential and unique to every event
-    space_deltas: list[DeltaSpaces]  # all space deltas (organized by the rules they were applied under)
+    space_deltas: list[DeltaSpace]  # all space deltas (organized by the rules they were applied under)
 
     # metadata
     inert: bool = False  # if true, the new event caused no changes to the system.
@@ -212,34 +202,31 @@ class Event:
     @property
     def affected_cells(self) -> Iterator[DeltaCell]:
         """Returns all cell deltas"""
-        for r in self.space_deltas:
-            for space_delta in r.space_deltas:
-                for cell_delta in space_delta.cell_deltas:
-                    if cell_delta:
-                        yield cell_delta
+        for space_delta in self.space_deltas:
+            for cell_delta in space_delta.cell_deltas:
+                if cell_delta:
+                    yield cell_delta
 
     @property
     def causally_connected_events(self) -> Iterator[int]:
         """Returns events (stored as indices) whose created vec were destroyed by this event"""
         for delta in self.affected_cells:
             for cell in delta.destroyed_cells:
-                yield cell.generation
+                yield int(cell.generation)  # convert to normal int in case, for instance, it is a numpy int.
 
     @property
     def spaces(self) -> Iterator[SpaceState]:
         """Returns all newly created spaces"""
-        for r in self.space_deltas:
-            for space_delta in r.space_deltas:
-                for space in space_delta.output_space:
-                    yield space
+        for space_delta in self.space_deltas:
+            for space in space_delta.output_space:
+                yield space
 
     @property
-    def spaces_with_metadata(self) -> Iterator[tuple[DeltaSpaces, DeltaSpace, DeltaCell, SpaceState]]:
+    def spaces_with_deltas(self) -> Iterator[tuple[DeltaSpace, DeltaCell, SpaceState]]:
         """Returns all newly created spaces along with their metadata (in the parent structure)"""
-        for r in self.space_deltas:
-            for space_delta in r.space_deltas:
-                for cell_delta, space in zip(space_delta.cell_deltas, space_delta.output_space):
-                    yield r, space_delta, cell_delta, space
+        for space_delta in self.space_deltas:
+            for cell_delta, space in zip(space_delta.cell_deltas, space_delta.output_space):
+                yield space_delta, cell_delta, space
 
     def __str__(self):
         return '[' + ', '.join(str(space) for space in self.spaces) + ']'
@@ -249,6 +236,9 @@ class Coordinate(NamedTuple):
     """A unique branch (useful for multi-ways)"""
     event_idx: int
     space_idx: int
+
+    def __str__(self) -> str:
+        return f'({self.event_idx}, {self.space_idx})'
 
 
 class Flow:
@@ -267,8 +257,8 @@ class Flow:
         # Signals (can be used to live update analysis objects like the causal graph)
         self.on_evolved_step: Signal = Signal()
         self.on_evolved_n: Signal[int] = Signal()  # after all evolves
-        self.on_undone_step: Signal = Signal()
-        self.on_undone_n: Signal[int] = Signal()  # after all undo's
+        self.on_regress_step: Signal = Signal()
+        self.on_regress_n: Signal[int] = Signal()  # after all undo's
         self.on_clear: Signal = Signal()
         self.on_ruleset_set: Signal = Signal()
 
@@ -284,7 +274,15 @@ class Flow:
         """Used to set the initial space"""
         if not self.events:
             self.events.append(cast(Event, cast(object, 0)))
-        self.events[0] = Event(0, [DeltaSpaces(tuple((DeltaSpace(i, (i,), (DeltaCell((), ()),)) for i in initial_space)), None)])  # initial output space must be `i` as well so that next evolve() works.
+        self.events[0] = Event(
+            time=0,
+            space_deltas=list(
+                (
+                    DeltaSpace(i, (i,), (DeltaCell((), ()),), None)
+                    for i in initial_space
+                )
+            )
+        )  # initial output space must be `i` as well so that next evolve() works.
 
     def clear_evolution(self) -> None:
         """Clear the evolution."""
@@ -306,7 +304,7 @@ class Flow:
         - apply the rules to the current space states using RuleSet.apply()
         - if a rule was successfully applied, create a new event and increment the time ``step``
         """
-        applied_rules: list[DeltaSpaces] = self.ruleset.apply(tuple(self.current_event.spaces))
+        applied_rules: list[DeltaSpace] = self.ruleset.apply(tuple(self.current_event.spaces))
         if not any(applied_rules):  # if no rules made any modifications to the spaces
             self.current_event.inert = True
             return
@@ -323,18 +321,15 @@ class Flow:
         self.current_event.causal_distance_to_creation = min_prev + 1
 
         # construct the Multiway tree
-        def _():
+        if self.build_multiway_space_links:
             if len(self.events) > 1:
                 parent_event: Event = self.events[-2]
                 current_event: Event = self.events[-1]
-                for cr in current_event.space_deltas:
-                    for c_delta_space in cr.space_deltas:
-                        for pr in parent_event.space_deltas:
-                            for p_delta_space in pr.space_deltas:
-                                if c_delta_space.input_space in p_delta_space.output_space:
-                                    c_delta_space.parent_delta = p_delta_space
-                                    return  # exit the algorithm
-        if self.build_multiway_space_links: _()
+                for c_delta_space in current_event.space_deltas:
+                    for p_delta_space in parent_event.space_deltas:
+                        if c_delta_space.input_space in p_delta_space.output_space:
+                            c_delta_space.parent_delta = p_delta_space
+                            break
 
         # emit any signals
         self.on_evolved_step.emit()
@@ -361,32 +356,27 @@ class Flow:
         for _ in range(n_steps):
             self.n_step_progress = (_ + 1) / n_steps
             self.events.pop()
-            self.on_undone_step.emit()
+            self.on_regress_step.emit()
             if self._dirty_thread:
                 break
-        self.on_undone_n.emit(n_steps)
+        self.on_regress_n.emit(n_steps)
 
     def stop_thread(self):
         """Used to safely interrupt any long-running methods in a thread."""
         self._dirty_thread = True
 
-    def walk_branch(self, branch_coord: Coordinate, steps: int = -1) -> Iterator[SpaceState]:
-        """Each branch has a unique access index (space index, event index)... this is the best way to walk up the event tree from a particular branch leaf."""
-        event_idx, space_idx = branch_coord
+    def walk_branch(self, branch_coord: Coordinate) -> Iterator[SpaceState]:
+        """Each branch has a unique access index (event index, space index)... this is the best way to walk up the event tree from a particular branch leaf."""
         try:
-            event: Event = self.events[event_idx]
-            g: Iterator[tuple] = event.spaces_with_metadata
-            for _ in range(space_idx): next(g)
+            event: Event = self.events[branch_coord.event_idx]
+            g: Iterator[tuple] = event.spaces_with_deltas
+            for _ in range(branch_coord.space_idx): next(g)
             t: tuple = next(g)
-            branch: DeltaSpace = t[1]
-            yield t[3]  # the space at space_idx
+            branch: DeltaSpace = t[0]
+            yield t[2]  # the space at space_idx
             while (nb := branch.parent_delta) is not branch:
                 yield branch.input_space
                 branch = nb
-                if steps != -1:
-                    steps -= 1
-                    if steps == 0:
-                        break
         except StopIteration:
             raise IndexError("The space index is out of range.")
         except IndexError:
@@ -402,7 +392,7 @@ class Flow:
         destroyed_at: list[list[Coordinate]] = [[] for _ in range(len(cell_ids))]  # can be destroyed in multiple branches
         for event_idx in range(*event_range.indices(len(self.events))):
             event: Event = self.events[event_idx]
-            for space_idx, (dss, ds, dc, s) in enumerate(event.spaces_with_metadata):
+            for space_idx, (ds, dc, s) in enumerate(event.spaces_with_deltas):
                 for i, cell_id in enumerate(cell_ids):
                     if not created_at[i] and cell_id in (c.id for c in dc.new_cells):
                         created_at[i] = Coordinate(event_idx, space_idx)

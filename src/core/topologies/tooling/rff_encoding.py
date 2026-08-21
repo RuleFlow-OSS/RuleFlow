@@ -3,41 +3,58 @@
 from sys import maxunicode
 from wcwidth import wcwidth
 
-# Character Set Setup
-PRINTABLE_CHARS = [
-    c for c in map(chr, range(33, maxunicode + 1))
-    if c.isprintable() and not c.isspace() and wcwidth(c) == 1
-]
-ASCII = PRINTABLE_CHARS[:94]
-del PRINTABLE_CHARS[:94]
-PRINTABLE_CHARS[33:33] = ASCII
 
-# Pre-compute reverse lookup dictionary for O(1) access in ord_rff
-# _CHAR_TO_INT = {c: i for i, c in enumerate(PRINTABLE_CHARS)}
-_RFF_LEN = len(PRINTABLE_CHARS)
+PRINTABLE_CHARS: list[str]
+ASCII: list[str]
+RFF_LEN: int
+def init_chr() -> None:
+    global PRINTABLE_CHARS, ASCII, RFF_LEN
+    PRINTABLE_CHARS = [
+        c for c in map(chr, range(33, maxunicode + 1))
+        if c.isprintable() and not c.isspace() and wcwidth(c) == 1
+    ]
+    ASCII = PRINTABLE_CHARS[:94]
+    del PRINTABLE_CHARS[:94]
+    PRINTABLE_CHARS[33:33] = ASCII
+    RFF_LEN = len(PRINTABLE_CHARS)
+
+
+CHAR_TO_INT: dict[str, int]
+def init_ord() -> None:
+    global PRINTABLE_CHARS, CHAR_TO_INT
+    try:
+        CHAR_TO_INT = {c: i for i, c in enumerate(PRINTABLE_CHARS)}
+    except NameError:
+        init_chr()
+        init_ord()
 
 
 def chr_rff(o: int) -> str:
     try:
         return PRINTABLE_CHARS[int(o)]
     except IndexError:
-        return PRINTABLE_CHARS[int(o) % _RFF_LEN]
+        return PRINTABLE_CHARS[int(o) % RFF_LEN]
+    except NameError:
+        init_chr()
+        return chr_rff(o)
+
+
+def ord_rff(c: str) -> int:
+    """
+    Returns the integer index of a character in the RFF character set.
+    """
+    try:
+        return CHAR_TO_INT[c]
+    except KeyError:
+        if len(c) != 1:
+            raise TypeError(f"ord_rff() expected a character, but string of length {len(c)} found.")
+        raise ValueError(f"Character {c!r} is not in the RFF printable character set.")
+    except NameError:
+        init_ord()
+        return ord_rff(c)
 
 
 # NOTE: not currently using the following code. It may, however, be useful at some point in the future.
-# def ord_rff(c: str) -> int:
-#     """
-#     Returns the integer index of a character in the RFF character set.
-#     """
-#     if len(c) != 1:
-#         raise TypeError(f"ord_rff() expected a character, but string of length {len(c)} found")
-#
-#     try:
-#         return _CHAR_TO_INT[c]
-#     except KeyError:
-#         raise ValueError(f"Character {c!r} is not in the RFF printable character set.")
-#
-#
 # def encode(data: Union[bytes, str, Sequence[int], np.ndarray]) -> np.ndarray:
 #     """
 #     Converts various data types into a NumPy array of RFF integer indices.
@@ -80,4 +97,5 @@ def chr_rff(o: int) -> str:
 
 
 if __name__ == "__main__":
-    pass
+    print(chr_rff(65))
+    print(ord_rff('A'))
