@@ -197,6 +197,20 @@ class P(Plugin):
             yield self.show_ruleset
 
         with Collapsible(title='Cell Rendering', collapsed=False):
+            # color palette
+            with Collapsible(title='Color Palette', collapsed=False):
+                self.ordered_color_palette = Checkbox('Ordered Spectrum', value=True, id='ordered-color-palette')
+                self.ordered_color_palette.value = False
+                yield self.ordered_color_palette
+
+                self.color_palette = Input(str(self.space_formatter.color_palette_seed), type='integer', id='color-palette')
+                self.color_palette.border_title = 'Color Palette'
+                yield self.color_palette
+
+                self.default_char_color = Input(str(self.space_formatter.default_char_color), id='default-char-color')
+                self.default_char_color.border_title = 'Default Char Color'
+                yield self.default_char_color
+
             self.cell_width = Input('3', type='integer', id='cell-width')
             self.cell_width.border_title = 'Cell Width'
             yield self.cell_width
@@ -204,11 +218,13 @@ class P(Plugin):
             # property based controls
             with RadioSet(id='encode-property') as r:
                 self.encode_property = r
+                self.encode_property.border_title = 'Encode Property'
                 yield RadioButton('Quanta', value=True)
                 yield RadioButton('Generation')
                 yield RadioButton('Identity')
             with RadioSet(id='style-property') as r:
                 self.style_property = r
+                self.style_property.border_title = 'Style Property'
                 yield RadioButton('Quanta', value=True)
                 yield RadioButton('Generation')
                 yield RadioButton('Identity')
@@ -325,7 +341,7 @@ class P(Plugin):
                 self.view.notify('Invalid space coordinate.', severity='warning')
                 e.input.value = '({}, {})'.format(*self._space_coordinate)
 
-        elif _id in ('cell-width', 'highlight-gens', 'highlight-ids', 'style-map', 'symbol-map'):
+        elif _id in ('cell-width', 'color-palette', 'default-char-color', 'highlight-gens', 'highlight-ids', 'style-map', 'symbol-map'):
             self._handle_styling_update()
 
     def handle_selection_toggle(self, e: SelectionList.SelectionToggled):
@@ -349,6 +365,9 @@ class P(Plugin):
         _id: str | None = e.checkbox.id
         if _id == 'show-ruleset':
             self.ruleset_container.display = e.value
+        elif _id == 'ordered-color-palette':
+            self.color_palette.disabled = bool(e.value)
+            self._handle_styling_update()
         elif _id == 'show-active-ruleset':
             self.active_ruleset_container.display = e.value
             if not e.value:
@@ -425,6 +444,9 @@ class P(Plugin):
             (
                 self.cell_width.value,
                 tuple(self.render_controls.selected),
+                self.ordered_color_palette.value,
+                self.color_palette.value,
+                self.default_char_color.value,
                 self.style_map.value,
                 self.symbol_map.value
             )
@@ -444,6 +466,13 @@ class P(Plugin):
             formatter.clear_default_styles_on_override = render_controls_bitmap['exclusive-mapping']
             formatter.show_symbols = render_controls_bitmap['show-symbols']
             formatter.encode_ordinals = render_controls_bitmap['show-encoded-symbols']
+
+            # Set the color palette
+            if self.color_palette.value and not self.ordered_color_palette.value:
+                formatter.set_color_palette_seed(int(self.color_palette.value))
+            else:
+                formatter.set_color_palette_seed(None)
+            formatter.default_char_color = self.default_char_color.value
 
             # Set the overrides
             if self.style_map.value != 'None':
@@ -479,6 +508,7 @@ class P(Plugin):
 • ----
 """
 
+    # TODO: we need to get the ECA working again...
     def _reset_temp_highlighted_cells(self):
         self._reset_hovered_info_label()
         if self._cell_ids_to_highlight:
@@ -557,22 +587,22 @@ class P(Plugin):
                                table: DataTable,
                                hide_disabled: bool = False,
                                remember_old_row_count: bool = False) -> None:
-        return
+        # TODO: add dedicated controls for the ruleset table such as showing type, Group, hiding disabled, etc.
         def print_rule(rule: BaseRule) -> tuple[Text, Text]:
             selectors: list[Text] = []
             for s in rule.selector:
-                sv = s.selector
-                if isinstance(sv, str | bytes):
-                    selectors.append(self.space_formatter.convert_pure_str(sv))
+                if s.type == 'literal':
+                    selectors.append(self.space_formatter.convert_pure_sequence(s.selector))  # type: ignore
+                elif s.type == 'regex':
+                    selectors.append(Text('Re:') + self.space_formatter.convert_pure_sequence(s.selector))  # type: ignore
                 else:
-                    selectors.append(Text(str(sv)))
+                    selectors.append(Text(str(s.selector)))
             targets: list[Text] = []
             for t in rule.target:
-                tv = t.target
-                if isinstance(tv, int):
-                    targets.append(Text(str(tv)))
+                if t.type == 'literal':
+                    targets.append(self.space_formatter.convert_pure_sequence(t.target))  # type: ignore
                 else:  # when `tv` is Sequence[int]
-                    targets.append(self.space_formatter.convert_pure_str(''.join(str(c) for c in tv)))
+                    targets.append(Text(str(t.target)))
             return (Text(', ').join(selectors) if len(selectors) > 1 else selectors[0] if selectors else '',  # type: ignore
                     Text(', ').join(targets) if len(targets) > 1 else targets[0] if targets else '')
 

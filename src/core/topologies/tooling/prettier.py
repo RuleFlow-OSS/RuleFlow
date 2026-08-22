@@ -9,17 +9,20 @@ from typing import Iterator, Iterable
 from rich.text import Text
 from core.topologies.nd_space import SpaceState1D
 from core.topologies.tooling.rff_encoding import chr_rff
+from random import Random
 
 
-# Color Palette (64 Colors)
-COLOR_PALETTE: list[str] = ['#5a8b1a', '#00728b', '#8b221a', '#1a648b', '#6b8b1a', '#1a2d8b', '#1a4e8b', '#8b2d1a',
-                            '#8b1a7b', '#5a8b1b', '#8b691a', '#8b1a33', '#8b1a44', '#7b8b1a', '#1a8b22', '#8b7b1a',
-                            '#64676E', '#8b1a6e', '#8b0000', '#7e8b1a', '#8b1a4e', '#2d8b2d', '#8b1a82', '#431a8b',
-                            '#1a7e8b', '#628b1a', '#8b431a', '#6e1a8b', '#348b1a', '#4e1a8b', '#8b1a62', '#8b5e1a',
-                            '#1a8b43', '#3c1a8b', '#1a5c8b', '#1a4e8b', '#5c1a8b', '#228b1a', '#8b3d1a', '#6e1a8b',
-                            '#1a7b8b', '#1a8b34', '#8b1a22', '#8b511a', '#8b1a43', '#1a8b51', '#3d8b1a', '#1a8b4e',
-                            '#838b1a', '#1a8b6e', '#6b8b1a', '#1a8b7e', '#1a788b', '#1a3d8b', '#4e8b1a', '#471a8b',
-                            '#7b8b1a', '#1a8b3d', '#221a8b', '#511a8b', '#1a228b', '#758b1a', '#8b1a72', '#2d1a8b']
+# Ordered Color Palette (64 Colors)
+COLOR_PALETTE: list[str] = [
+    '#ff0000', '#ff1400', '#ff2800', '#ff3d00', '#ff5100', '#ff6500', '#ff7900', '#ff8e00',
+    '#ffa200', '#ffb600', '#ffca00', '#ffdf00', '#fff300', '#f7ff00', '#e3ff00', '#ceff00',
+    '#baff00', '#a6ff00', '#92ff00', '#7dff00', '#69ff00', '#55ff00', '#41ff00', '#2dff00',
+    '#18ff00', '#04ff00', '#00ff10', '#00ff24', '#00ff39', '#00ff4d', '#00ff61', '#00ff75',
+    '#00ff8a', '#00ff9e', '#00ffb2', '#00ffc6', '#00ffdb', '#00ffef', '#00fbff', '#00e7ff',
+    '#00d2ff', '#00beff', '#00aaff', '#0096ff', '#0081ff', '#006dff', '#0059ff', '#0045ff',
+    '#0030ff', '#001cff', '#0008ff', '#0c00ff', '#2000ff', '#3500ff', '#4900ff', '#5d00ff',
+    '#7100ff', '#8600ff', '#9a00ff', '#ae00ff', '#c200ff', '#d700ff', '#eb00ff', '#ff00ff'
+]
 
 
 class SpaceState1DFormatter:
@@ -32,12 +35,19 @@ class SpaceState1DFormatter:
         # this holds pre-initiated Text objects for every character
         self.rich_cache: dict[int | tuple[int, int] | tuple[int, str], Text] = {}
 
+        # special properties
+        self._random_engine: Random = Random()
+        self.COLOR_PALETTE: list[str] = []
+        self.color_palette_seed: int = 19
+        self.set_color_palette_seed(self.color_palette_seed)
+
         # special modifiers
         self.highlight_cells_with_id: dict[int, str] = {}
         self.highlight_cells_in_generation: dict[int, str] = {}
 
         # style properties
         self.styling: bool = True
+        self.default_char_color: str = 'black'
         self.style_on_background: bool = True
         self.clear_default_styles_on_override: bool = False
         self.style_using_property: int = 0
@@ -51,21 +61,23 @@ class SpaceState1DFormatter:
         self.symbol_mapping_override: dict[int, str] = {}
 
     def _ordinal_style(self, o: int) -> str:
-        if not self.styling:
+        if not self.styling or o == -1:  # don't encode wildcards
             return ""
-        color_idx: int = o % len(COLOR_PALETTE)
+        color_idx: int = o % len(self.COLOR_PALETTE)
         if self.style_mapping_override:
             if self.clear_default_styles_on_override:
                 default_style = ""
             else:
-                default_style = f"on {COLOR_PALETTE[color_idx]}" if self.style_on_background \
-                    else COLOR_PALETTE[color_idx]
+                default_style = f"{self.default_char_color} on {self.COLOR_PALETTE[color_idx]}" \
+                    if self.style_on_background else self.COLOR_PALETTE[color_idx]
             return self.style_mapping_override.get(o, default_style)
         else:
-            return f"on {COLOR_PALETTE[color_idx]}" if self.style_on_background \
-                else COLOR_PALETTE[color_idx]
+            return f"{self.default_char_color} on {self.COLOR_PALETTE[color_idx]}" if self.style_on_background \
+                else self.COLOR_PALETTE[color_idx]
 
     def _ordinal_encode(self, o: int) -> str:
+        if o == -1:
+            return '.'
         if self.encode_ordinals:
             try: return chr_rff(o)
             except: return "퟼"
@@ -107,6 +119,14 @@ class SpaceState1DFormatter:
                                                          style=self._ordinal_style(os_), end=''))
         return Text(end='').join(iter_cells())
 
+    def set_color_palette_seed(self, n: int | None):
+        if n is None:
+            self.COLOR_PALETTE = COLOR_PALETTE.copy()
+        else:
+            self._random_engine.seed(n)
+            self.COLOR_PALETTE = COLOR_PALETTE.copy()
+            self._random_engine.shuffle(self.COLOR_PALETTE)
+
     def reset_cache(self):
         self.rich_cache.clear()
 
@@ -121,24 +141,29 @@ class SpaceState1DFormatter:
 
 
 if __name__ == "__main__":
-    from implementations.sss import SSS
+    # Test the color palette
     from rich.console import Console
-    system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space="AB")
-    system.build_multiway_space_links = True
-    system.evolve(30)
-
     console = Console(width=1000)
-    formatter = SpaceState1DFormatter()
-    formatter.encode_using_property = 'id'
-    formatter.style_using_property = 'id'
-    formatter.encode_ordinals = True
-    formatter.cell_width = 3
-    formatter.styling = True
-    # formatter.highlight_cells_with_id = {188: 'on black'}
+    console.print(Text('').join([Text('  ', style=f'on {c}') for c in COLOR_PALETTE]))
 
-    # Test Branch Walks
-    for idx, ds in enumerate(reversed(list(system.walk_branch((-1, 0))))):
-        console.print(idx, '\t', formatter(ds))
+    # from implementations.sss import SSS
+    # from rich.console import Console
+    # system = SSS(rule_set=["ABA -> AAB", "A -> ABA"], initial_space="AB")
+    # system.build_multiway_space_links = True
+    # system.evolve(30)
+    #
+    # console = Console(width=1000)
+    # formatter = SpaceState1DFormatter()
+    # formatter.encode_using_property = 0
+    # formatter.style_using_property = 0
+    # formatter.encode_ordinals = True
+    # formatter.cell_width = 3
+    # formatter.styling = True
+    # # formatter.highlight_cells_with_id = {188: 'on black'}
+    #
+    # # Test Branch Walks
+    # for idx, ds in enumerate(reversed(list(system.walk_branch((-1, 0))))):
+    #     console.print(idx, '\t', formatter(ds))
 
     # Test mid-change
     # for idx, event in enumerate(system.events):

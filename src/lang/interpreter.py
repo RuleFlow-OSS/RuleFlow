@@ -11,7 +11,7 @@ from pathlib import Path
 from core.engine import Flow, RuleSet
 from core.topologies.nd_space import SpaceState1D, VectorBackendType
 from core.topologies.tooling.searcher import VectorRegexSearch, VectorSearch
-from lang.parser import parse, get_bootstrapped_parse_function, BootstrappedParserType
+from lang.parser import parse, get_bootstrapped_parse_function
 from lang.implementation import (
     Selector, Target, BaseRule, SubstitutionRule, OverwriteRule, InsertionRule, DeletionRule
 )
@@ -240,7 +240,7 @@ class FlowLang(FlowLangBase):
             }
         )
 
-    def interpret(self, src: str, *args, bootstrapped: BootstrappedParserType | None = None, **kwargs) -> None:
+    def interpret(self, src: str, *args, bootstrapped: str | None = None, **kwargs) -> None:
         self.ast: dict[str, Any] = get_bootstrapped_parse_function(bootstrapped)(src, *args, **kwargs) \
             if bootstrapped else parse(src)
 
@@ -304,12 +304,12 @@ class FlowLang(FlowLangBase):
         rules: list[BaseRule] = [rule for rule in self.ruleset.rules  # type: ignore
                                  if any(i in rule.group for i in identifiers) and not rule.disabled]
         for rule in rules:  # If any rule makes no changes, disable it.
-            if isinstance(rule, OverwriteRule):  # we only care about this type of rule... for obvious reasons
+            if not isinstance(rule, OverwriteRule):  # we only care about this type of rule... for obvious reasons
                 continue
             # we only care about the first selector and target... we can't determine how multiple targets will behave on different match sets.
-            selector = rule.selector[0]
-            target = rule.target[0]
-            if not (isinstance(selector, Sequence) and isinstance(target, Sequence)):
+            selector: Selector = rule.selector[0]
+            target: Target = rule.target[0]
+            if not (selector.type in ('literal', 'regex') and target.type == 'literal'):
                 continue
 
             rule_is_active: bool = False
@@ -324,6 +324,24 @@ class FlowLang(FlowLangBase):
 
 
 if __name__ == "__main__":
+    code = """
+# initial state
+@init("A" * 15 + "B" + 15 * "A");
+
+# define the rules
+@macro("stat.ca.preset");
+@macro("stat.eca.pflow", "AB", 30);
+
+# run n times
+@clear();
+@evolve(14);
+        """
+    flow = FlowLang()
+    flow.interpret(code)
+    from pprint import pprint
+    for r in flow.ruleset.rules:
+        print(r.disabled, r)
+    exit()
     pass
     from pprint import pprint
     import psutil
@@ -342,6 +360,7 @@ if __name__ == "__main__":
     # Run Simulation
     code = """
     @init(("A", 66));
+    @macro("stat.ca.preset");
     ABA -> (65, 65, "B");
     (65) -> ABA;
     """

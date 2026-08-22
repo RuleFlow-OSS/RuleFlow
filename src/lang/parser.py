@@ -1,23 +1,12 @@
 from lark import Lark, Transformer
 from core.numlib import str_to_num, INF
 from lang.builtin_flows import PRESETS, FLOWS
-from typing import Any, Callable, Literal, Sequence
+from typing import Any, Callable, Sequence
 from pathlib import Path
 WORKING_DIR: Path = Path(__file__).parent
 def set_working_dir(cd: Path) -> None:
     global WORKING_DIR
     WORKING_DIR = cd.absolute()
-
-
-# Builtin flows that our parser must have access to for imports/includes
-BUILTIN_FLOWS: dict[str, str] = {}
-BUILTIN_FLOWS.update(PRESETS)
-BUILTIN_FLOWS.update(FLOWS)
-
-
-def parse_callable_args(s: str) -> tuple[tuple, dict[str, Any]]:
-    """parsing helper to support python callable signatures"""
-    return eval(f'(lambda *args, **kwargs: (args, kwargs))({s})')
 
 
 # The formal grammar for our DSL
@@ -112,25 +101,9 @@ MULTILINE_COMMENT: /\"\"\"[\s\S]+?\"\"\"/
 """
 
 
-def macro_directive(path: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Macro (like importing, but simply dropping the src right into the ast) from a file or preset"""
-    value: str | None = BUILTIN_FLOWS.get(path, None)
-    if value is None:
-        with open(WORKING_DIR / path) as f:
-            value = f.read()
-    path_stem: BootstrappedParserType = path.rsplit('.')[1]  # type: ignore
-    result = get_bootstrapped_parse_function(path_stem)(value, *args, **kwargs)
-    result['type'] = 'macro'  # we create a "macro" object type so that the transformer can resolve it.
-    return result
-
-
-def intercept_top_level_directive(d: dict[str, Any]) -> list[dict[str, Any]]:
-    """Top level directives run BEFORE anything is run. They allow macros to run, part of constructing the actual flow source."""
-    expr: str = d['expr']
-    if expr.startswith('macro('):
-        return [eval(expr, globals={'macro': macro_directive})]
-    else:  # if there is nothing to intercept just propagate
-        return [d]
+def parse_callable_args(s: str) -> tuple[tuple, dict[str, Any]]:
+    """parsing helper to support python callable signatures"""
+    return eval(f'(lambda *args, **kwargs: (args, kwargs))({s})')
 
 
 class FlowLangTransformer(Transformer):
@@ -290,6 +263,33 @@ class FlowLangTransformer(Transformer):
         return {name: args}
 
 
+# Builtin flows that our parser must have access to for imports/includes
+BUILTIN_FLOWS: dict[str, str] = {}
+BUILTIN_FLOWS.update(PRESETS)
+BUILTIN_FLOWS.update(FLOWS)
+
+
+def macro_directive(path: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Macro (like importing, but simply dropping the src right into the ast) from a file or preset"""
+    value: str | None = BUILTIN_FLOWS.get(path, None)
+    if value is None:
+        with open(WORKING_DIR / path) as f:
+            value = f.read()
+    result = get_bootstrapped_parse_function(Path(path).suffix)(value, *args, **kwargs)
+    result['type'] = 'macro'  # we create a "macro" object type so that the transformer can resolve it.
+    return result
+
+
+def intercept_top_level_directive(d: dict[str, Any]) -> list[dict[str, Any]]:
+    """Top level directives run BEFORE anything is run. They allow macros to run, part of constructing the actual flow source."""
+    expr: str = d['expr']
+    if expr.startswith('macro('):
+        return [eval(expr, globals={'macro': macro_directive})]
+    else:  # if there is nothing to intercept just propagate
+        return [d]
+
+
+# ==== User Facing ====
 def FlowLangParser(use_transformer: bool = True) -> Lark:
     """Creates the Lark parser object from which .parse(text) can be called."""
     return Lark(
@@ -301,38 +301,55 @@ def FlowLangParser(use_transformer: bool = True) -> Lark:
 
 def parse(value: str) -> dict[str, Any]:
     """Parsing helper for top-level directives"""
-    return FlowLangParser(use_transformer=True).parse(value)
+    return FlowLangParser(use_transformer=True).parse(value)  # type: ignore
 
 
-type BootstrappedParserType = Literal['pflow', 'wpflow']
-def get_bootstrapped_parse_function(name: BootstrappedParserType, default: Any = parse) -> Callable[..., dict[str, Any]] | Any:
+def get_bootstrapped_parse_function(suffix: str, default: Any = parse) -> Callable[..., dict[str, Any]] | Any:
     # import bootstrapped parsers here to avoid cyclic import errors
     from lang.bootstrapped.python import bootstrapped_py_parse
     from lang.bootstrapped.wolfram import bootstrapped_wl_parse
     return {
-        'pflow': bootstrapped_py_parse,
-        'wpflow': bootstrapped_wl_parse
-    }.get(name, default)
+        '.pflow': bootstrapped_py_parse,
+        '.wpflow': bootstrapped_wl_parse
+    }.get(suffix, default)
 
 
 if __name__ == "__main__":
     from pprint import pprint
     parser = FlowLangParser(True)
     t = parser.parse(r'''
-    @macro("ca.preset");
-    @test(1, "12", (2,2), k=2);
-    @test2.all()[0].yup(1, 2, 3);
-    -test[slice(1, 1, 1)]
-    (-a -j[2])(
-        "AAB" AB -> ABA;
-        fn<1, 2> -> (1, 2, 3, "A") -ttt;
-        [1] --> AB;
-        (1, 2, -3, 4) --> AB;
-    )
-    # This is an example of a single line comment!
-    """
-    This is an example of multiline comment.
-    It is a cool feature!
-    """
+@macro("stat.ca.preset");
+@test(1, "12", (2,2), k=2);
+@test2.all()[0].yup(1, 2, 3);
+-test[slice(1, 1, 1)]
+(-a -j[2])(
+    "AAB" AB -> ABA;
+    fn<1, 2> -> (1, 2, 3, "A") -ttt;
+    [1] --> AB;
+    (1, 2, -3, 4) --> AB;
+)
+(1, 2) ->;
+# This is an example of a single line comment!
+"""
+This is an example of multiline comment.
+It is a cool feature!
+"""
     ''')
+
+    t = parser.parse(r'''
+@macro("stat.eca.pflow", "AB", 30);
+    ''')
+
+    t = parser.parse(r'''
+# set the initial state
+@init("AB");
+
+# define the sequential rules
+ABA -> AAB;
+A   -> ABA;
+
+# evolve
+@evolve(10);
+        ''')
+
     pprint(t)

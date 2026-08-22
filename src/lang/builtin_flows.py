@@ -1,20 +1,20 @@
 PRESETS: dict[str, str] = {
-    'ca.preset': """
-@self.regex_searcher.set_find_args(overlapped=True)
-@self.literal_searcher.set_overlapping_mode(True)
-@compress(0);
+    'stat.ca.preset': """
+@self.regex_searcher.set_find_args(overlapped=True);
+@self.literal_searcher.set_overlapping_mode(True);
+# @compress(0);
 @merge(0);
 -pl[inf] -mr[0,inf]
 """,  # default import code to streamline the use of CAs in the 0th group.
 
-    'global_multiway.preset': """
+    'stat.global_multiway.preset': """
 -gb[false]
 -sr[0, inf]
 -mr[0, inf]
 -bl[inf]
 """,  # search buffer becomes "corrupt" after edits, so disable.
 
-    'ordered_multiway.preset': """
+    'stat.ordered_multiway.preset': """
 -gb[true]
 -sr[0, inf]
 -mr[0, inf]
@@ -24,7 +24,7 @@ PRESETS: dict[str, str] = {
 
 FLOWS: dict[str, str] = {
     # ==== Wolfram Numbering Scheme Ruleset Enumeration ====
-    'wns.static.pflow': """
+    'stat.eca.pflow': """
 charset: str = args[0]
 if len(charset) != 2:
     raise ValueError("Charset must contain exactly 2 characters.")
@@ -36,12 +36,12 @@ binary_patterns: list[tuple[int, int, int]] = [
 rule_bits = f'{index:08b}'  # Convert index to 8-bit binary string (e.g., 30 -> '00011110')
 for (b1, b2, b3), result_bit in zip(binary_patterns, rule_bits):
     ---
-    {charset[b1]}{charset[b2]}{charset[b3]} --> _{charset[int(result_bit)]};
+    {charset[b1]}{charset[b2]}{charset[b3]} --> .{charset[int(result_bit)]};
     ---
 """,
 
     # ==== Totalistic Cellular Automata Enumeration ====  NOTE: this needs a lot of testing...
-    'tca.static.pflow': """
+    'stat.tca.pflow': """
 import itertools
 
 charset: str = args[0]
