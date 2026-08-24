@@ -2,7 +2,7 @@ PRESETS: dict[str, str] = {
     'stat.ca.preset': """
 @self.regex_searcher.set_find_args(overlapped=True);
 @self.literal_searcher.set_overlapping_mode(True);
-# @compress(0);
+@compress(0);
 @merge(0);
 -pl[inf] -mr[0,inf]
 """,  # default import code to streamline the use of CAs in the 0th group.

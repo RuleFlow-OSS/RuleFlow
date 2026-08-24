@@ -11,7 +11,7 @@ Future Features:
 
 # Textual Imports
 from rich.text import Text
-from textual.widgets import (Collapsible, Button, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList, RadioSet, RadioButton)
+from textual.widgets import (Collapsible, Button, TabPane, Input, Checkbox, Label, DataTable as _DataTable, SelectionList, Select, RadioSet, RadioButton)
 from textual.widgets.data_table import CellKey
 from textual.widget import Widget
 from textual.coordinate import Coordinate
@@ -36,6 +36,8 @@ class DataTable(_DataTable):
         super().__init__(*args, **kwargs)
         self.sig_mouse_over_inner_cell: Signal[Coordinate | None, int] = Signal()
         self.enabled_sig_mouse_over_space_cell: bool = False
+        self.cursor_type = 'none'
+        self.show_cursor = False
 
     def on_mouse_move(self, event: MouseMove) -> None:
         if not self.enabled_sig_mouse_over_space_cell:
@@ -101,7 +103,7 @@ class P(Plugin):
         self._space_coordinate: SpaceCoordinate = SpaceCoordinate(-1, 0)
         self._hover_highlight_cells_with_id: dict[int, str] = {}
         self._hover_highlight_cells_in_generation: dict[int, str] = {}
-        self._columns_controls = (  # (control title, column title, is actual column, control key, default value)
+        self._data_table_controls = (  # (control title, column title, is actual column, control key, default value)
             ("Cell Count", 'Cells', True, 'cell-count', False),
             ("Causal Distance", 'Distance', True, 'causal-distance', False),
             ("Causally Connected", 'Connected', True, 'causally-connected', False),
@@ -113,6 +115,10 @@ class P(Plugin):
             ("Space Count", 'Space #', True, 'space-count', False),
             ("Show Space", 'Space', True, 'space', True)
         )
+        self._ruleset_table_controls = (  # (control title, control key, default value)
+            ("Show Table", 'show-ruleset-table', True),
+            ("╰─ Hide Disabled", 'hide-disabled-rules', True),
+        )
         self._render_controls = (  # (control title, control key, default value)
             ("Cell Styling", 'cell-styling', True),
             ("├─ On Background", 'cell-styling-on-background', True),
@@ -120,7 +126,6 @@ class P(Plugin):
             ("Show Symbols", 'show-symbols', True),
             ("╰─ Encode Ordinals", 'show-encoded-symbols', True),
         )
-        self._render_controls_hash: int = 0  # used to only refresh the cash if something actually changed.
 
         # connect model signals
         self.flow.on_evolved_n.connect(lambda: self.cft(self._rebuild_rows))
@@ -135,7 +140,6 @@ class P(Plugin):
         self.view.sig_selection_list_toggled.connect(self.handle_selection_toggle)
         self.view.sig_radio_set_changed.connect(self.handle_radio_set_change)
         self.view.sig_checkbox_changed.connect(self.handle_checkbox_change)
-        self.view.sig_button_pressed.connect(self.handle_button_press)
 
         # temp trackers
         self.__last_hover_coord_and_offset: tuple[Coordinate, int] = (Coordinate(0, 0), 0)
@@ -185,12 +189,18 @@ class P(Plugin):
 
         with Collapsible(title='Table Controls', collapsed=False):
             self.data_table_controls = SelectionList(
-                *(Selection(c[0], c[3], c[4]) for c in self._columns_controls),
+                *(Selection(c[0], c[3], c[4]) for c in self._data_table_controls),
                 id='data-table-controls'
             )
             self.data_table_controls.border_title = 'Data Table'
             self._rebuild_columns(rebuild_rows=False)  # must be called here or sometime after to initiate columns.
             yield self.data_table_controls
+
+            # The new initial ruleset table controls...
+            self.ruleset_table_controls = SelectionList(
+                *(Selection(c[0], c[3], c[4]) for c in self._data_table_controls),
+                id='data-table-controls'
+            )
 
             self.show_ruleset = Checkbox('Show Ruleset', value=True, id='show-ruleset')
             self.show_ruleset.value = False
@@ -198,7 +208,7 @@ class P(Plugin):
 
         with Collapsible(title='Cell Rendering', collapsed=False):
             # color palette
-            with Collapsible(title='Color Palette', collapsed=False):
+            with Collapsible(title='Base Style', collapsed=False):
                 self.ordered_color_palette = Checkbox('Ordered Spectrum', value=True, id='ordered-color-palette')
                 self.ordered_color_palette.value = False
                 yield self.ordered_color_palette
@@ -207,9 +217,13 @@ class P(Plugin):
                 self.color_palette.border_title = 'Color Palette'
                 yield self.color_palette
 
-                self.default_char_color = Input(str(self.space_formatter.default_char_color), id='default-char-color')
-                self.default_char_color.border_title = 'Default Char Color'
-                yield self.default_char_color
+                self.base_style = Input(str(self.space_formatter.base_style), id='base-style')
+                self.base_style.border_title = 'Base Style'
+                yield self.base_style
+
+                self.justification = Input(str(self.space_formatter.justify), id='justify')
+                self.justification.border_title = 'Justify'
+                yield self.justification
 
             self.cell_width = Input('3', type='integer', id='cell-width')
             self.cell_width.border_title = 'Cell Width'
@@ -217,14 +231,14 @@ class P(Plugin):
 
             # property based controls
             with RadioSet(id='encode-property') as r:
+                r.border_title = 'Encode Property'
                 self.encode_property = r
-                self.encode_property.border_title = 'Encode Property'
                 yield RadioButton('Quanta', value=True)
                 yield RadioButton('Generation')
                 yield RadioButton('Identity')
             with RadioSet(id='style-property') as r:
+                r.border_title = 'Style Property'
                 self.style_property = r
-                self.style_property.border_title = 'Style Property'
                 yield RadioButton('Quanta', value=True)
                 yield RadioButton('Generation')
                 yield RadioButton('Identity')
@@ -252,8 +266,6 @@ class P(Plugin):
             self.symbol_map = Input('None', placeholder='5, "a": 65; 2: "Y"', id='symbol-map')
             self.symbol_map.border_title = 'Symbol Map'
             yield self.symbol_map
-
-            yield Button('↻ Refresh Cache', id='refresh-cache')
 
         with Collapsible(title='Hover Explorer', collapsed=False):
             self.show_active_ruleset = Checkbox('Show Active Ruleset', id='show-active-ruleset')
@@ -341,7 +353,7 @@ class P(Plugin):
                 self.view.notify('Invalid space coordinate.', severity='warning')
                 e.input.value = '({}, {})'.format(*self._space_coordinate)
 
-        elif _id in ('cell-width', 'color-palette', 'default-char-color', 'highlight-gens', 'highlight-ids', 'style-map', 'symbol-map'):
+        elif _id in ('cell-width', 'color-palette', 'base-style', 'justify', 'highlight-gens', 'highlight-ids', 'style-map', 'symbol-map'):
             self._handle_styling_update()
 
     def handle_selection_toggle(self, e: SelectionList.SelectionToggled):
@@ -378,12 +390,6 @@ class P(Plugin):
             self.id_hover_style.disabled = not bool(e.value)
         elif _id == 'gen-hover':
             self.gen_hover_style.disabled = not bool(e.value)
-
-    def handle_button_press(self, e: Button.Pressed):
-        _id: str | None = e.button.id
-        if _id == 'refresh-cache':
-            self.space_formatter.reset_cache()
-            self._handle_styling_update()
 
     def hande_flow_clear(self):
         try:
@@ -439,52 +445,41 @@ class P(Plugin):
     def _handle_styling_update(self):
         formatter: SpaceState1DFormatter = self.space_formatter
 
-        # ==== Set fragile controls (controls that require cache refresh) ====
-        fragile_controls_hash: int = hash(
-            (
-                self.cell_width.value,
-                tuple(self.render_controls.selected),
-                self.ordered_color_palette.value,
-                self.color_palette.value,
-                self.default_char_color.value,
-                self.style_map.value,
-                self.symbol_map.value
+        # Set the base style
+        if self.color_palette.value and not self.ordered_color_palette.value:
+            formatter.set_color_palette_seed(int(self.color_palette.value))
+        else:
+            formatter.set_color_palette_seed(None)
+        formatter.base_style = self.base_style.value
+        if (v:=self.justification.value) in ('default', 'left', 'center', 'right', 'full'):
+            formatter.justify = v  # type: ignore
+        else:
+            self.view.notify(
+                f'You must enter one the following:\n"default", "left", "center", "right", "full"',
+                title='Justify Values', severity='warning'
             )
-        )
-        if fragile_controls_hash != self._render_controls_hash:
-            # Set the cell width
-            formatter.cell_width = int(self.cell_width.value)
-            selected_render_controls = set(self.render_controls.selected)
 
-            # Set the render controls
-            render_controls_bitmap: dict[str, bool] = {
-                c[1]: c[1] in selected_render_controls
-                for c in self._render_controls
-            }
-            formatter.styling = render_controls_bitmap['cell-styling']
-            formatter.style_on_background = render_controls_bitmap['cell-styling-on-background']
-            formatter.clear_default_styles_on_override = render_controls_bitmap['exclusive-mapping']
-            formatter.show_symbols = render_controls_bitmap['show-symbols']
-            formatter.encode_ordinals = render_controls_bitmap['show-encoded-symbols']
+        # Set the cell width
+        formatter.cell_width = int(self.cell_width.value)
+        selected_render_controls = set(self.render_controls.selected)
 
-            # Set the color palette
-            if self.color_palette.value and not self.ordered_color_palette.value:
-                formatter.set_color_palette_seed(int(self.color_palette.value))
-            else:
-                formatter.set_color_palette_seed(None)
-            formatter.default_char_color = self.default_char_color.value
+        # Set the render controls
+        render_controls_bitmap: dict[str, bool] = {
+            c[1]: c[1] in selected_render_controls
+            for c in self._render_controls
+        }
+        formatter.styling = render_controls_bitmap['cell-styling']
+        formatter.style_on_background = render_controls_bitmap['cell-styling-on-background']
+        formatter.clear_default_styles_on_override = render_controls_bitmap['exclusive-mapping']
+        formatter.show_symbols = render_controls_bitmap['show-symbols']
+        formatter.encode_ordinals = render_controls_bitmap['show-encoded-symbols']
 
-            # Set the overrides
-            if self.style_map.value != 'None':
-                formatter.style_mapping_override = self.parse_character_key_values(self.style_map.value)
-            if self.symbol_map.value != 'None':
-                formatter.symbol_mapping_override = self.parse_character_key_values(self.symbol_map.value)
+        # Set the overrides
+        if self.style_map.value != 'None':
+            formatter.style_mapping_override = self.parse_character_key_values(self.style_map.value)
+        if self.symbol_map.value != 'None':
+            formatter.symbol_mapping_override = self.parse_character_key_values(self.symbol_map.value)
 
-            # Reset the cache and set new hash
-            self.space_formatter.reset_cache()
-            self._render_controls_hash = fragile_controls_hash
-
-        # ==== Set persistent controls (no cache refresh needed) ====
         # Ordinal Properties
         formatter.encode_using_property = self.encode_property.pressed_index
         formatter.style_using_property = self.style_property.pressed_index
@@ -620,7 +615,7 @@ class P(Plugin):
         if remember_old_row_count and table.row_count < old_row_count:
             for _ in range(old_row_count - table.row_count): table.add_row()
 
-    def _add_row(self,space_state: SpaceState,
+    def _add_row(self, space_state: SpaceState,
                  event: FlowEvent,
                  column_bitmap: list[bool],
                  column_modifiers: list[bool]) -> None:
@@ -687,7 +682,7 @@ class P(Plugin):
         column_bitmap: list[bool] = []
         column_modifiers: list[bool] = []
         selected_column_controls = set(self.data_table_controls.selected)
-        for control_title, column_title, is_column, control_key, default_value in self._columns_controls:
+        for control_title, column_title, is_column, control_key, default_value in self._data_table_controls:
             (column_bitmap if is_column else column_modifiers).append(control_key in selected_column_controls)
         for t in self.get_flow_events():
             self._add_row(*t, column_bitmap, column_modifiers)
@@ -702,7 +697,7 @@ class P(Plugin):
 
         # build columns
         selected_column_controls = set(self.data_table_controls.selected)
-        for control_title, column_title, is_column, control_key, default_value in self._columns_controls:
+        for control_title, column_title, is_column, control_key, default_value in self._data_table_controls:
             if control_key not in selected_column_controls or not is_column:
                 continue
             if not column_title:
