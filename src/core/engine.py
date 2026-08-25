@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from core.signals import Signal
 
 
-@runtime_checkable  # this lets isinstance work with implemented Cells. It should be noted, however, that type checks are not performed on attributes or methods, only that the structure exists.
-class Cell(Protocol):
+# NOTE: be careful to only create Cell references after edits to a topology have taken place (otherwise reference is wrong)
+class Cell(NamedTuple):
     """A single unit within a universe (a.k.a. Quanta).
     A cell is analogous to a discrete/atomic spacial-unit and quanta is the matter that fills up that unit of space.
     It is at this smallest unit of space that we care about causality. There are two ways that this protocol may be
@@ -33,8 +33,14 @@ class Cell(Protocol):
     generation: int
     id: int
 
+    def __str__(self) -> str:
+        return f'Cell({self.quanta}, {self.generation}, {self.id})'
 
-@runtime_checkable
+    def __repr__(self) -> str:
+        return str(self)
+
+
+@runtime_checkable  # this lets isinstance work. It should be noted, however, that type checks are not performed on attributes or methods, only that the structure exists.
 class Topology(Protocol):
     """The data structure implementation that manages the persistence/lower level modification of a state.
     All topology implementations must follow this protocol.

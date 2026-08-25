@@ -45,24 +45,26 @@ class DataTable(_DataTable):
         # Grab the row/col directly from the exact terminal cell the mouse is touching.
         meta = event.style.meta  # metadata holds the row and column info
         # If the mouse is over the header or the empty space below the table, this metadata won't exist.
-        if not meta or "row" not in meta or "column" not in meta or meta['row'] == -1:
+        if not meta or "row" not in meta or "column" not in meta or meta['row'] == -1 or meta['column'] == -1:
             self.sig_mouse_over_inner_cell.emit(None, 0)
             return
         coord = Coordinate(meta["row"], meta["column"])
         start_x = 0
         padding = self.cell_padding
         columns = list(self.columns.values())
+
+        start_x += self._row_label_column_width  # we must remember the labeling width
         for i in range(coord.column):  # Calculate start_x ONLY for columns BEFORE the hovered one
             col = columns[i]
             if col.auto_width:
                 base_width = max(col.width or 0, col.content_width or 0)
             else:
                 base_width = col.width or col.content_width or 0
-            # Add this column's total footprint (width + 1 left pad + 1 right pad)
+            # Add this column's total footprint
             start_x += base_width + 2 * padding
         # Calculate the specific character offset inside the cell
         virtual_x = event.x + self.scroll_offset.x
-        # Subtract start_x to zero out the column, then subtract 1 for THIS column's left padding
+        # Subtract start_x to zero out the column, then subtract THIS column's left padding
         char_offset = (virtual_x - start_x) - padding
 
         # emit the signal
@@ -100,6 +102,7 @@ class P(Plugin):
 
         # attributes
         self._event_range: slice = slice(-100, None)  # this is inclusive to both ends
+        self._selected_flow_events: list[tuple[SpaceState, FlowEvent]] = []  # access to the events and spaces currently being rendered
         self._space_coordinate: SpaceCoordinate = SpaceCoordinate(-1, 0)
         self._hover_highlight_cells_with_id: dict[int, str] = {}
         self._hover_highlight_cells_in_generation: dict[int, str] = {}
@@ -116,7 +119,7 @@ class P(Plugin):
             ("Show Space", 'Space', True, 'space', True)
         )
         self._ruleset_table_controls = (  # (control title, control key, default value)
-            ("Show Table", 'show-ruleset-table', True),
+            ("Show Table", 'show-ruleset-table', False),
             ("╰─ Hide Disabled", 'hide-disabled-rules', True),
         )
         self._render_controls = (  # (control title, control key, default value)
@@ -142,7 +145,8 @@ class P(Plugin):
         self.view.sig_checkbox_changed.connect(self.handle_checkbox_change)
 
         # temp trackers
-        self.__last_hover_coord_and_offset: tuple[Coordinate, int] = (Coordinate(0, 0), 0)
+        self.__last_hover_coord_and_offset: tuple[Coordinate | None, int] = (None, 0)
+        self.__last_hover_coord_and_cell_idx: tuple[Coordinate, int] = (Coordinate(0, 0), 0)
 
     def get_flow_events(self) -> Iterator[tuple[SpaceState, FlowEvent]]:
         """Gets the SpaceState and the associated event given the current space coordinate and event range.
@@ -198,13 +202,11 @@ class P(Plugin):
 
             # The new initial ruleset table controls...
             self.ruleset_table_controls = SelectionList(
-                *(Selection(c[0], c[3], c[4]) for c in self._data_table_controls),
-                id='data-table-controls'
+                *(Selection(*c) for c in self._ruleset_table_controls),
+                id='ruleset-table-controls'
             )
-
-            self.show_ruleset = Checkbox('Show Ruleset', value=True, id='show-ruleset')
-            self.show_ruleset.value = False
-            yield self.show_ruleset
+            self.ruleset_table_controls.border_title = 'Ruleset Table'
+            yield self.ruleset_table_controls
 
         with Collapsible(title='Cell Rendering', collapsed=False):
             # color palette
@@ -217,7 +219,7 @@ class P(Plugin):
                 self.color_palette.border_title = 'Color Palette'
                 yield self.color_palette
 
-                self.base_style = Input(str(self.space_formatter.base_style), id='base-style')
+                self.base_style = Input(str(self.space_formatter.base_style), placeholder='e.g. black', id='base-style')
                 self.base_style.border_title = 'Base Style'
                 yield self.base_style
 
@@ -271,13 +273,13 @@ class P(Plugin):
             self.show_active_ruleset = Checkbox('Show Active Ruleset', id='show-active-ruleset')
             yield self.show_active_ruleset
 
-            self.show_hovered_cell_info = Checkbox('Show cell info', id='show-hovered-cell-info')
+            self.show_hovered_cell_info = Checkbox('Show Cell Info', id='show-hovered-cell-info')
             yield self.show_hovered_cell_info
 
-            self.hovered_info_label = Label()
-            self.hovered_info_label.display = False
-            self._reset_hovered_info_label()
-            yield self.hovered_info_label
+            self.hovered_cell_label = Label()
+            self.hovered_cell_label.display = False
+            self._reset_hovered_cell_label()
+            yield self.hovered_cell_label
 
             self.id_hover = Checkbox('Highlight Identity', id='id-hover')
             yield self.id_hover
@@ -356,6 +358,16 @@ class P(Plugin):
         elif _id in ('cell-width', 'color-palette', 'base-style', 'justify', 'highlight-gens', 'highlight-ids', 'style-map', 'symbol-map'):
             self._handle_styling_update()
 
+        if _id == 'justify':
+            b: bool = e.value not in ('default', 'left')
+            for e in (self.show_active_ruleset,
+                      self.show_hovered_cell_info,
+                      self.gen_hover,
+                      self.id_hover):
+                e.disabled = b
+                e.value = False
+            self.hovered_cell_label.display = False
+
     def handle_selection_toggle(self, e: SelectionList.SelectionToggled):
         _id: str = e.selection_list.id
         if _id == 'data-table-controls':
@@ -365,6 +377,10 @@ class P(Plugin):
             self.event_range.disabled = not table_enabled
             self.space_coordinate.disabled = not table_enabled
             self._rebuild_columns()
+        elif _id == 'ruleset-table-controls':
+            selected = e.selection_list.selected
+            self.ruleset_container.display = 'show-ruleset-table' in selected
+            self._rebuild_ruleset_table(self.flow.ruleset.rules, self.ruleset_table)  # type: ignore
         elif _id == 'render-controls':
             self._handle_styling_update()
 
@@ -375,9 +391,7 @@ class P(Plugin):
 
     def handle_checkbox_change(self, e: Checkbox.Changed):
         _id: str | None = e.checkbox.id
-        if _id == 'show-ruleset':
-            self.ruleset_container.display = e.value
-        elif _id == 'ordered-color-palette':
+        if _id == 'ordered-color-palette':
             self.color_palette.disabled = bool(e.value)
             self._handle_styling_update()
         elif _id == 'show-active-ruleset':
@@ -385,11 +399,17 @@ class P(Plugin):
             if not e.value:
                 self.active_ruleset_table.clear()
         elif _id == 'show-hovered-cell-info':
-            self.hovered_info_label.display = bool(e.value)
+            self.hovered_cell_label.display = bool(e.value)
         elif _id == 'id-hover':
             self.id_hover_style.disabled = not bool(e.value)
         elif _id == 'gen-hover':
             self.gen_hover_style.disabled = not bool(e.value)
+        self.data_table.enabled_sig_mouse_over_space_cell = any(w.value for w in (
+            self.show_active_ruleset,
+            self.show_hovered_cell_info,
+            self.id_hover,
+            self.gen_hover
+        ))
 
     def hande_flow_clear(self):
         try:
@@ -494,8 +514,8 @@ class P(Plugin):
         self._rebuild_ruleset_table(self.flow.ruleset.rules, self.ruleset_table)  # type: ignore
         self._rebuild_rows()
 
-    def _reset_hovered_info_label(self):
-        self.hovered_info_label.content = """
+    def _reset_hovered_cell_label(self):
+        self.hovered_cell_label.content = """
 [bold]Cell Info[/bold]
 • ----
 • ----
@@ -504,52 +524,49 @@ class P(Plugin):
 """
 
     # TODO: we need to get the ECA working again...
-    def _reset_temp_highlighted_cells(self):
-        self._reset_hovered_info_label()
+    def _reset_hovered_cell(self):
+        return
+        self._reset_hovered_cell_label()
         if self._cell_ids_to_highlight:
             self._cell_ids_to_highlight = frozenset()
             self._rebuild_rows()
 
     def _handle_mouse_over_data_table(self, coord: Coordinate | None, offset: int) -> None:
-        return
-        if (not coord
-                or offset == -1
-                or self.data_table.coordinate_to_cell_key(coord).column_key in ('event', 'distance', 'connected')):
-            self._reset_temp_highlighted_cells()
-            return
-
-        # calculate offset of the cell index (because of different padding/rendering options)
-        cell_content: str = str(self.data_table.get_cell_at(coord))
-        if cell_content.startswith(' '):  # if padding of " " around symbols is being used.
-            if cell_content.startswith('  '):  # if not rendering symbols but blocks of "  "
-                offset = offset // 2  # one extra symbol needs to be removed
-            else:
-                offset = offset // 3  # two extra symbols need to be removed
-
-        # if the last cell was the same
+        # avoid any and all repetition for each coord and offset
         if self.__last_hover_coord_and_offset == (coord, offset):
             return
         self.__last_hover_coord_and_offset = (coord, offset)
 
-        cell_key: CellKey = self.data_table.coordinate_to_cell_key(coord)
-        row_idx: int = int(cell_key.row_key.value)
-        column_idx: int = int(cell_key.column_key.value)
+        # if the coordinate is not valid
+        if (coord is None
+                or offset < 0
+                or self.data_table.coordinate_to_cell_key(coord).column_key != 'space'):
+            self._reset_hovered_cell()
+            return
+
+        # calculate offset of the cell index and cache it so that we avoid repetition.
+        cell_idx: int = offset // self.space_formatter.cell_width
+        if self.__last_hover_coord_and_cell_idx == (coord, cell_idx):
+            return
+        self.__last_hover_coord_and_cell_idx = (coord, cell_idx)
+
+        table_cell_key: CellKey = self.data_table.coordinate_to_cell_key(coord)
+        event_idx: int = int(table_cell_key.row_key.value)  # type: ignore
+        self.hovered_cell_label.content = str((event_idx, cell_idx))
 
         # grab all relevant information about the selected space
-        flow: FlowLang = self.flow
-        event: FlowEvent = flow.events[row_idx]
-        spaces: tuple[tuple[DeltaSpace, SpaceState], ...] = tuple(event.spaces_with_deltas)
-        space_state: SpaceState = spaces[column_idx][2]
-
-        # update the rows
-        if offset >= len(space_state):
-            self._reset_temp_highlighted_cells()
+        space_state: SpaceState = self._selected_flow_events[event_idx][0]
+        if offset >= len(space_state.vec):
+            self._reset_hovered_cell()
             return
-        flow_cell: FlowCell = space_state.get_all_cells()[offset]
+
+        flow_cell: FlowCell = space_state.vec.get_cell(offset)
+        return
         self._cell_ids_to_highlight = frozenset((flow_cell.id,))
         self._rebuild_rows()
 
         # update the hover info labels
+        event: FlowEvent = self._selected_flow_events[event_idx][1]
         try:
             affected_cells: DeltaCell = tuple(event.affected_cells)[column_idx]
             created_cells: int = len(affected_cells.new_cells)
@@ -564,7 +581,7 @@ class P(Plugin):
             cell_destroyed_at: None = None
             lifespan: None = None
         connected_events = tuple(event.causally_connected_events)
-        self.hovered_info_label.content = f"""
+        self.hovered_cell_label.content = f"""
 [bold]Cell #{offset}[/bold]
 • Encoded: {flow_cell.quanta}
 • Quanta: {flow_cell.quanta}
@@ -580,8 +597,10 @@ class P(Plugin):
 
     def _rebuild_ruleset_table(self, rules: Sequence[BaseRule],
                                table: DataTable,
-                               hide_disabled: bool = False,
+                               hide_disabled: bool | None = None,
                                remember_old_row_count: bool = False) -> None:
+        if hide_disabled is None:
+            hide_disabled = 'hide-disabled-rules' in self.ruleset_table_controls.selected
         # TODO: add dedicated controls for the ruleset table such as showing type, Group, hiding disabled, etc.
         def print_rule(rule: BaseRule) -> tuple[Text, Text]:
             selectors: list[Text] = []
@@ -684,7 +703,9 @@ class P(Plugin):
         selected_column_controls = set(self.data_table_controls.selected)
         for control_title, column_title, is_column, control_key, default_value in self._data_table_controls:
             (column_bitmap if is_column else column_modifiers).append(control_key in selected_column_controls)
-        for t in self.get_flow_events():
+
+        self._selected_flow_events = list(self.get_flow_events())
+        for t in self._selected_flow_events:
             self._add_row(*t, column_bitmap, column_modifiers)
 
         self._refresh_column_widths()

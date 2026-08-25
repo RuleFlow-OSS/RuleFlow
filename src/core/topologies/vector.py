@@ -5,6 +5,7 @@
 For any given vector implementation, the client code should continue to work.
 """
 from typing import MutableSequence, Sequence, overload, NamedTuple, Iterator
+from core.engine import Cell
 from copy import copy
 import numpy as np
 type PureVector = np.ndarray[tuple[int]]
@@ -132,39 +133,6 @@ class Vector(MutableSequence):
         return f"{self.__class__.__name__}({self.logical_data})"
 
 
-# NOTE: be careful to only create Cell references after edits to a CellVector have taken place (otherwise reference is wrong)
-class Cell(NamedTuple):  # implements the Cell Protocol from core.engine
-    vec: CellVector
-    index: int
-
-    @property
-    def quanta(self) -> int:
-        return self.vec.data.data[self.index]
-
-    @quanta.setter
-    def quanta(self, value: int) -> None:
-        self.vec.data.data[self.index] = value
-
-    @property
-    def generation(self) -> int:
-        return self.vec.generations.data[self.index]
-
-    @generation.setter
-    def generation(self, value: int) -> None:
-        self.vec.generations.data[self.index] = value
-
-    @property
-    def id(self) -> int:
-        return self.vec.ids.data[self.index]
-
-    @id.setter
-    def id(self, value: int) -> None:
-        self.vec.ids.data[self.index] = value
-
-    def __repr__(self) -> str:
-        return f'Cell({self.quanta}, {self.generation}, {self.id})'
-
-
 class CellVector(MutableSequence):
     __slots__ = ('data', 'generations', 'ids', 'id_start', 'generation', 'prev_gen')
 
@@ -182,15 +150,17 @@ class CellVector(MutableSequence):
 
     @property
     def as_cells(self) -> Iterator[Cell]:
-        for i in range(len(self.data)):
-            yield Cell(self, i)
+        yield from self.get_cells(slice(None, None))
 
     def get_cell(self, index: int) -> Cell:
-        return Cell(self, index)
+        return Cell(self.data[index], self.generations[index], self.ids[index])
 
     def get_cells(self, index: slice) -> Iterator[Cell]:
+        data = self.data
+        generations = self.generations
+        ids = self.ids
         for i in range(*index.indices(len(self.data))):
-            yield Cell(self, i)
+            yield Cell(data[i], generations[i], ids[i])
 
     def next_gen(self) -> CellVector:
         """Return a copy (next generation) of the current cell vector."""

@@ -66,7 +66,7 @@ class SpaceState1DFormatter:
         self.symbol_mapping_override: dict[int, str] = {}
 
         # base properties
-        self.base_style: str = 'black'
+        self.base_style: str = ''
         self.justify: Literal["default", "left", "center", "right", "full"] = 'default'
 
     def _ordinal_style(self, o: int) -> str:
