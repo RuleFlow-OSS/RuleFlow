@@ -1,10 +1,9 @@
-// set the initial state
+# set the initial state
 @init("AB");
 
-// define the sequential rules
+# define the sequential rules
 ABA -> AAB;
-A -> ABA;
+A   -> ABA;
 
-// Evolve n times
-//@clear();
+# evolve
 @evolve(10);

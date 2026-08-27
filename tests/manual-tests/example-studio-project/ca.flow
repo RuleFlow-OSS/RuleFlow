@@ -1,10 +1,10 @@
-// Rule 30
-@init("A" * 10 + "B" + 10 * "A");
-@import(ca.fp);
+# initial state
+@init("A" * 15 + "B" + 15 * "A");
 
-// define the rules
-@decode(wns, AB, 30);
+# define the rules
+@macro("stat.ca.preset");
+@macro("stat.eca.pflow", "AB", 30);
 
-// Run n times
-// @clear();
-@evolve(10);
+# run n times
+@clear();
+@evolve(14);

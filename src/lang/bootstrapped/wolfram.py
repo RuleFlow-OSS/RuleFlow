@@ -134,26 +134,26 @@ def bootstrapped_wl_parse(
 if __name__ == "__main__":
     from pprint import pprint
     wl_script = """
-    If[Length[args] < 2, Throw["Missing required arguments"]];
+If[Length[args] < 2, Throw["Missing required arguments"]];
 
-    charset = Characters[args[[1]]];
-    index = args[[2]];
+charset = Characters[args[[1]]];
+index = args[[2]];
 
-    patterns = IntegerDigits[#, 2, 3] & /@ Range[7, 0, -1];
-    ruleBits = IntegerDigits[index, 2, 8];
-    
-    Do[
-        b1 = charset[[ patterns[[i, 1]] + 1 ]];
-        b2 = charset[[ patterns[[i, 2]] + 1 ]];
-        b3 = charset[[ patterns[[i, 3]] + 1 ]];
-        res = charset[[ ruleBits[[i]] + 1 ]];
+patterns = IntegerDigits[#, 2, 3] & /@ Range[7, 0, -1];
+ruleBits = IntegerDigits[index, 2, 8];
 
-        ---
-        {b1}{b2}{b3} --> _{res};
-        ---
-        , 
-        {i, 1, 8}
-    ];
+Do[
+    b1 = charset[[ patterns[[i, 1]] + 1 ]];
+    b2 = charset[[ patterns[[i, 2]] + 1 ]];
+    b3 = charset[[ patterns[[i, 3]] + 1 ]];
+    res = charset[[ ruleBits[[i]] + 1 ]];
+
+    ---
+    {b1}{b2}{b3} --> .{res};
+    ---
+    , 
+    {i, 1, 8}
+];
     """
     print("Starting Wolfram Language Session...")
     try:
