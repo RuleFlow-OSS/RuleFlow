@@ -301,7 +301,7 @@ class P(Plugin):
     def panel(self) -> TabPane | None:
         # Ruleset Table
         self.ruleset_table = _DataTable(id='ruleset-table', show_cursor=False)
-        self.ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group')
+        self.ruleset_table.add_columns('Selector', 'Target', 'Type', 'Group', 'Disabled')
         self.ruleset_table.display = False
 
         # Evolution Table
@@ -532,7 +532,7 @@ class P(Plugin):
             if hide_disabled and rule.disabled:
                 continue
             table.add_row(
-                *print_rule(rule), rule.__class__.__name__, rule.group,  # type: ignore
+                *print_rule(rule), rule.__class__.__name__, rule.group, rule.disabled,  # type: ignore
                 label=str(i)
             )
 
@@ -579,14 +579,17 @@ class P(Plugin):
             return
 
         # calculate cell index and event index of the cell and cache it so that we avoid repetition.
-        cell_idx: int = offset // self.space_formatter.cell_width
+        cell_width: int = self.space_formatter.cell_width
+        if cell_width == 0:
+            cell_width = 1
+        cell_idx: int = offset // cell_width
         table_cell_key: CellKey = self.data_table.coordinate_to_cell_key(cell_coord)
         event_idx: int = int(table_cell_key.row_key.value)  # type: ignore
+
+        # avoid more repetition here
         if self.__last_hover_coord_and_cell_idx == (_:=(cell_coord, cell_idx)):
             return
         self.__last_hover_coord_and_cell_idx = _
-
-        self.hovered_cell_label.content = str((event_idx, cell_idx))
 
         # grab all relevant information about the selected space
         space_state: SpaceState = self._selected_flow_events[event_idx][0]

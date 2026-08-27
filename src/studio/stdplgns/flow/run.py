@@ -118,7 +118,7 @@ class P(Plugin):
         )
 
     def handle_btn_press(self, e: Button.Pressed):
-        btn: str = e.button.id
+        btn: str | None = e.button.id
         if btn == 'toolbar-btn-run':
             self.execute_flow()
         elif btn == 'toolbar-btn-stop':
@@ -135,7 +135,7 @@ class P(Plugin):
             self.log_view.write(f"[bold green] --- Log Cleared --- [/]")
 
     def handle_checkbox_change(self, e: Checkbox.Changed):
-        btn: str = e.checkbox.id
+        btn: str | None = e.checkbox.id
         if btn == 'hot-reload':
             self.hot_after_n_changes.disabled = e.checkbox.value
             if e.checkbox.value:
