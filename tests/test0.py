@@ -26,4 +26,3 @@
 # a = np.frombuffer(ascii.encode(codec), dtype=dtype)
 # print(a)
 # print(a.tobytes())
-print(slice(None, None).indices(10))

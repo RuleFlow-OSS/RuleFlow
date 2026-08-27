@@ -30,11 +30,11 @@ class Cell(NamedTuple):
 
     Note that NamedTuples satisfy this protocol even though the setter methods throw errors."""
     quanta: int
-    generation: int
+    gen: int
     id: int
 
     def __str__(self) -> str:
-        return f'Cell({self.quanta}, {self.generation}, {self.id})'
+        return f'Cell({self.quanta}, {self.gen}, {self.id})'
 
     def __repr__(self) -> str:
         return str(self)
@@ -78,7 +78,7 @@ class SpaceState(ABC):
 
     @abstractmethod
     def next_gen(self) -> SpaceState:
-        """This is to be used as the method for creating the next generation."""
+        """This is to be used as the method for creating the next gen."""
 
     @property
     @abstractmethod
@@ -218,7 +218,7 @@ class Event:
         """Returns events (stored as indices) whose created vec were destroyed by this event"""
         for delta in self.affected_cells:
             for cell in delta.destroyed_cells:
-                yield int(cell.generation)  # convert to normal int in case, for instance, it is a numpy int.
+                yield int(cell.gen)  # convert to normal int in case, for instance, it is a numpy int.
 
     @property
     def spaces(self) -> Iterator[SpaceState]:
@@ -345,7 +345,6 @@ class Flow:
         i: int = 0
         self._dirty_thread = False  # must reset
         while i < n_steps:
-            # print(str(next(self.current_event.spaces).vec.search_buffer).replace('A', '\x1b[1;41m A \x1b[0m').replace('B', '\x1b[1;42m B \x1b[0m'))  # if we want to see how the buffer changes.
             self.n_step_progress = (i + 1) / n_steps
             i += 1
             self._evolve()

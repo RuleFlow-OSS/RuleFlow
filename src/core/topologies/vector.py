@@ -163,7 +163,7 @@ class CellVector(MutableSequence):
             yield Cell(data[i], generations[i], ids[i])
 
     def next_gen(self) -> CellVector:
-        """Return a copy (next generation) of the current cell vector."""
+        """Return a copy (next gen) of the current cell vector."""
         o: CellVector = object.__new__(CellVector)
         o.data = copy(self.data)
         o.generations = copy(self.generations)

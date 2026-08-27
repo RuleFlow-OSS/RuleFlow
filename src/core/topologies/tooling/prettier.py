@@ -198,7 +198,7 @@ if __name__ == "__main__":
     #     console.print(idx, '\t', formatter(next(event.spaces)))
     #     if idx == 43:
     #         formatter.encode_using_property = 'quanta'
-    #         formatter.style_using_property = 'generation'
+    #         formatter.style_using_property = 'gen'
     #         # formatter.reset_cache()
 
     # Test Cell Lifespan Detection
