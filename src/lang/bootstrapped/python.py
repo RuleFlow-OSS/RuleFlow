@@ -37,6 +37,6 @@ if __name__ == "__main__":
     from pprint import pprint
     pprint(bootstrapped_py_parse("""
 ---
--a
+-a[{args[0]}]
 ---
-"""))
+""", 0))

@@ -9,7 +9,7 @@ from textual.timer import Timer
 from textual.worker import Worker
 
 # Standard Imports
-from typing import Iterator, Literal
+from typing import Iterator
 import time
 import psutil
 import os
@@ -17,6 +17,7 @@ import sys
 from rich.traceback import Traceback as RichTraceback
 from studio.model import Plugin
 from lang.interpreter import FlowLang
+from lang.bootstrapped import wolfram
 
 
 class P(Plugin):
@@ -61,7 +62,7 @@ class P(Plugin):
             btn.can_focus = False
             self.view.workspace_toolbar.compose_add_child(btn)
 
-        if self.model.file_path.suffix == '.pflow':
+        if self.model.file_path.suffix in ('.pflow', '.wpflow'):
             with Collapsible(title='Programmed Flow', collapsed=False):
                 self.exec_args = Input(id='exec-args')
                 self.exec_args.border_title = 'Args'
@@ -69,6 +70,8 @@ class P(Plugin):
                 self.exec_kwargs = Input(id='exec-kwargs')
                 self.exec_kwargs.border_title = 'Kwargs'
                 yield self.exec_kwargs
+                if self.model.file_path.suffix == '.wpflow':
+                    yield Button('Terminate Wolfram', id="terminate-wolfram")
         self.regress_steps = Input(type='integer', value='1')
         self.regress_steps.border_title = 'Regression Steps'
         yield self.regress_steps
@@ -133,6 +136,9 @@ class P(Plugin):
         elif btn == 'clear-log':
             self.log_view.clear()
             self.log_view.write(f"[bold green] --- Log Cleared --- [/]")
+        elif btn == 'terminate-wolfram':
+            wolfram.close_all_wl_sessions()
+            self.view.notify('Wolfram Session Terminated')
 
     def handle_checkbox_change(self, e: Checkbox.Changed):
         btn: str | None = e.checkbox.id
@@ -173,8 +179,7 @@ class P(Plugin):
 
         # execute the FlowLang
         try:
-            if self.model.file_path.suffix in ('.pflow', '.wpflow'):
-                suffix: Literal['pflow', 'wpflow'] = self.model.file_path.suffix[1:]  # type: ignore
+            if (suffix:=self.model.file_path.suffix) in ('.pflow', '.wpflow'):
                 args = eval(self.exec_args.value) if self.exec_args.value else ()
                 kwargs = eval(f'(lambda **k: k)({self.exec_kwargs.value})') if self.exec_kwargs.value else {}
                 self.flow.interpret(self.view.code_editor_text_area.text, *args, bootstrapped=suffix, **kwargs)

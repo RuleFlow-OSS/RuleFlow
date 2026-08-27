@@ -28,7 +28,7 @@ def close_wl_session(session_name: str = 'default') -> WolframLanguageSession:
 def close_all_wl_sessions() -> None:  # we don't need to make this a callback with `atexit` because active sessions hijack socket protocols are running other threads that prevent natural exiting.
     """Ensures all background Wolfram Kernels are terminated when Python exits.
     This must be called before exiting the main thread."""
-    for name, session in ACTIVE_SESSIONS.items():
+    for session in ACTIVE_SESSIONS.values():
         session.terminate()
 
 
@@ -157,7 +157,7 @@ Do[
     """
     print("Starting Wolfram Language Session...")
     try:
-        ast_1 = bootstrapped_wl_parse(wl_script, "AB", 30)
+        ast_1 = bootstrapped_wl_parse(wl_script)
         print(f"\n--- Parsed AST for ECA Rule v1 ---")
         pprint(ast_1)
 
