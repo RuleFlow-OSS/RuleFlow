@@ -3,7 +3,7 @@
 
 # define the rules
 @macro("stat.ca.preset");
-@macro("stat.eca.pflow", "AB", 30);
+@macro("ca.wpflow", "AB", 30);  # stat.eca.pflow
 
 # run n times
 @clear();
