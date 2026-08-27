@@ -306,6 +306,7 @@ class P(Plugin):
 
         # Evolution Table
         self.data_table = DataTable(id='data-table')
+        self.data_table.show_cursor = False
         self.data_table.sig_mouse_over_inner_cell.connect(self._handle_mouse_over_data_table)
         return TabPane(
             self.name.title(),
