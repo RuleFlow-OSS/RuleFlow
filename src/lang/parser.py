@@ -299,8 +299,9 @@ def FlowLangParser(use_transformer: bool = True) -> Lark:
     )
 
 
-def parse(value: str) -> dict[str, Any]:
-    """Parsing helper for top-level directives"""
+def parse(value: str, *a, **k) -> dict[str, Any]:
+    """Parsing helper for top-level directives.
+    Note: any additional args and kwargs are consumed to be compatible with bootstrapped parse functions."""
     return FlowLangParser(use_transformer=True).parse(value)  # type: ignore
 
 

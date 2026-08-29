@@ -1,5 +1,5 @@
 """
-This plugin provides basic running/undoing features, hot-reload, and several other utilities for interactive with flows.
+This plugin provides basic executing/undoing features, hot-reload, and several other utilities for interactive with flows.
 """
 # Textual Imports
 from textual.widgets import Collapsible, TabPane, Input, Checkbox, Button, ProgressBar, Label, RichLog
@@ -7,6 +7,7 @@ from textual.widget import Widget
 from textual.containers import ScrollableContainer
 from textual.timer import Timer
 from textual.worker import Worker
+from textual import events
 
 # Standard Imports
 from typing import Iterator
@@ -20,8 +21,21 @@ from lang.interpreter import FlowLang
 from lang.bootstrapped import wolfram
 
 
+class LogView(RichLog):
+    def on_mount(self):
+        self.begin_capture_print()
+        self.can_focus = False
+
+    def on_print(self, e: events.Print):
+        txt: str = e.text.rstrip('\n')
+        if e.stderr:
+            self.write(f'[bold red]> stderr:[/bold red] [red]{txt}[/]')
+        else:
+            if txt: self.write(txt)
+
+
 class P(Plugin):
-    name = 'run'
+    name = 'execute'
     file_types = ['.flow', '.pflow', '.wpflow']
 
     @property
@@ -47,10 +61,10 @@ class P(Plugin):
         self._hot_after_n_changes: int = 0  # for fast reference
         self._worker: Worker | None = None  # for checking and managing the current thread
 
-    def controls(self) -> Iterator[Widget]:  # NOTE: there aren't many settings for the run tab due to most controls being available through the DSL.
+    def controls(self) -> Iterator[Widget]:  # NOTE: there aren't many settings for the execute tab due to most controls being available through the DSL.
         self.view.code_editor_text_area.language = {'.wpflow': 'rust'}.get(self.model.file_path.suffix, 'python')  # rust is a mostly good syntax highlighter for wl.
         toolbar_btn = (
-            pb:=Button("▶", tooltip="Execute", classes="small-btn green", id="toolbar-btn-run", compact=True),
+            pb:=Button("▶", tooltip="Execute", classes="small-btn green", id="toolbar-btn-exec", compact=True),
             sb:=Button("■", tooltip="Stop", classes="small-btn red", id="toolbar-btn-stop", compact=True),
             Button("⤆", tooltip="Regress", classes="small-btn orange", id="toolbar-btn-regress", compact=True),
             Button("⎚", tooltip="Clear", classes="small-btn red", id="toolbar-btn-clear", compact=True)
@@ -96,7 +110,7 @@ class P(Plugin):
 
     def panel(self) -> TabPane | None:
         # Progress Bar Widget
-        self.progress_bar = ProgressBar(total=100, show_eta=True, id="run-progress-bar")
+        self.progress_bar = ProgressBar(total=100, show_eta=True, id="exec-progress-bar")
         self.progress_container = Collapsible(
             self.progress_bar,
             title="Execution Progress",
@@ -104,7 +118,7 @@ class P(Plugin):
         )
 
         # Standard Output Widget
-        self.log_view = RichLog(id="run-log-view", highlight=True, markup=True, wrap=True)
+        self.log_view = LogView(id="log-view", highlight=True, markup=True, wrap=True)
         self.log_container = Collapsible(
             self.log_view,
             Button('Clear Log', id="clear-log"),
@@ -122,7 +136,7 @@ class P(Plugin):
 
     def handle_btn_press(self, e: Button.Pressed):
         btn: str | None = e.button.id
-        if btn == 'toolbar-btn-run':
+        if btn == 'toolbar-btn-exec':
             self.execute_flow()
         elif btn == 'toolbar-btn-stop':
             self.execute_stop()
@@ -172,7 +186,9 @@ class P(Plugin):
 
     # noinspection unbound-local-variable
     def _execute(self) -> None:
-        # use self.cft to be thread-safe on textual side (according to docs on Workers)
+        # note: use self.cft to be thread-safe on textual side (according to docs on Workers)
+
+        # start profiler recording
         if self.mem_profile.value:
             mem_start = self._process.memory_info().rss / 1024 / 1024
             start_time = time.perf_counter()
@@ -197,6 +213,8 @@ class P(Plugin):
                     self.log_view.write,
                     f"[bold red]Execution Error:[/bold red] {str(e)}"
                 )
+
+        # upon finishing, toggle the stop button back to play button.
         self.cft(self._toggle_play_stop_buttons)
 
         # show profiler info
@@ -215,19 +233,20 @@ class P(Plugin):
     def execute_flow(self) -> None:
         """Handles the flow execution and updates the UI components."""
         if self._worker and self._worker.is_running:  # this should not happen, but stop just in case.
-            self.log_view.write("[bold red]Execution Error:[/] A flow thread is currently running.")
+            self.log_view.write("[bold red]Threading Error:[/] A flow thread is currently running.")
             return
         try:
             self._worker = self.view.run_worker(
                 self._execute,
                 thread=True
             )
-            self._toggle_play_stop_buttons()
+            self._toggle_play_stop_buttons()  # toggle the play button into a stop button.
             self.log_view.write(f'> [bold green]Execute [u]{self.model.file_path.name}[/][/]')
-        except Exception as e:  # note: even though _execute handles exceptions, we still want to catch any unforeseen stuff here.
-            if self.show_traceback.value: self.log_view.write(RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
-            else: self.log_view.write(f"[bold red]Execution Error:[/] {str(e)}.")
-        # maybe more info will be logged at some point (if deemed useful)
+        except Exception as e:  # note: even though _execute handles exceptions, we still want to catch any unforeseen worker related stuff here.
+            if self.show_traceback.value:
+                self.log_view.write(RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
+            else:
+                self.log_view.write(f"[bold red]Threading Error:[/] {str(e)}.")
 
     def execute_stop(self) -> None:
         """Handles the flow execution and updates the UI components."""
@@ -239,8 +258,9 @@ class P(Plugin):
 
     def execute_regress(self) -> None:
         """Handles the flow regress and updates the UI components."""
+        regress_error_message = lambda m: f'[bold red]Regression Error:[/] {str(m)}'
         if self._worker and self._worker.is_running: # this should not happen, but stop just in case.
-            self.log_view.write("[bold red]Regression Error:[/] A flow thread is currently running.")
+            self.log_view.write(regress_error_message("A flow thread is currently running"))
             return
         try:
             steps: int = int(self.regress_steps.value)
@@ -249,12 +269,16 @@ class P(Plugin):
                     self.flow.regress(steps)
                     self.cft(self.log_view.write, f'> [bold #FFA500]Regress {steps} steps[/]')
                 except Exception as e:
-                    if self.show_traceback.value: self.cft(self.log_view.write, RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
-                    else: self.cft(self.log_view.write, f"[bold red]Regression Error:[/bold red] {str(e)}")
+                    if self.show_traceback.value:
+                        self.cft(self.log_view.write, RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
+                    else:
+                        self.cft(self.log_view.write, regress_error_message(str(e)))
             self._worker = self.view.run_worker(
                 _,
                 thread=True
             )
         except Exception as e:
-            if self.show_traceback.value: self.log_view.write(RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
-            else: self.log_view.write(f"[bold red]Regression Error:[/] {str(e)}.")
+            if self.show_traceback.value:
+                self.log_view.write(RichTraceback.from_exception(*sys.exc_info(), word_wrap=True))
+            else:
+                self.log_view.write(regress_error_message(str(e)))
