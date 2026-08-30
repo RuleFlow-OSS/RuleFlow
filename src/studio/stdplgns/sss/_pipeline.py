@@ -12,10 +12,13 @@ def run_sessie_enumeration(
         is_cancelled: Callable[[], bool],
         on_log: Callable[[str], None] | Any
 ) -> None:
+    # ================ Read Config ================
+    # Search Space
     search = workflow_config.get('search_space', {})
     start_idx = search.get('start_index', 1)
     end_idx = search.get('end_index', 100)
 
+    # Simulation
     sim = workflow_config.get('simulation', {})
     raw_init = sim.get('initial_state', 'A')
 
@@ -26,7 +29,6 @@ def run_sessie_enumeration(
         init_state = "".join(chr_rff(c) for c in raw_init)
 
     max_steps = sim.get('max_steps', 200)
-    halt_on_inert = sim.get('halt_on_inert', True)
 
     filter_names = workflow_config.get('filters', [])
     filter_funcs = [getattr(tests, f"test_for_{f}") for f in filter_names if hasattr(tests, f"test_for_{f}")]
@@ -34,6 +36,7 @@ def run_sessie_enumeration(
     total_runs = max(1, end_idx - start_idx + 1)
     current_idx = start_idx
 
+    # ================ Execute Pipeline ================
     while current_idx <= end_idx:
         if is_cancelled():
             on_log("[bold orange]Execution cancelled by user.[/]")
@@ -42,7 +45,7 @@ def run_sessie_enumeration(
         rs_data = tests.from_reduced_rank_index(current_idx)
         jumped = False
 
-        # 1. Apply Declarative Filters
+        # Apply Declarative Filters
         for func, name in zip(filter_funcs, filter_names):
             target_idx = func(rs_data)
             if target_idx is not None:
@@ -56,7 +59,7 @@ def run_sessie_enumeration(
         if jumped:
             continue
 
-        # 2. Simulate via FlowLang Generation
+        # Simulate via FlowLang Generation
         flow_code = f'@init("{init_state}");\n'
         for match, replace in rs_data["RuleSet"]:
             m_str: str = str(match)
@@ -74,7 +77,7 @@ def run_sessie_enumeration(
         try:
             flow = FlowLang()
             flow.interpret(flow_code)
-            flow.evolve(max_steps, break_when_inert=halt_on_inert)
+            flow.evolve(max_steps)
 
             cls_data = classify_system(flow, max_steps)
             rules_display = ", ".join(

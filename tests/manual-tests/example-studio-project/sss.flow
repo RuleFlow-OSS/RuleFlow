@@ -2,11 +2,9 @@
 @init("AB");
 
 # define the sequential rules
-# @p_seed('test');
-# -p_rule[.5]
 ABA -> AAB;
 A   -> ABA;
 
 # evolve
 @clear();
-@evolve(10);
+@evolve(20);

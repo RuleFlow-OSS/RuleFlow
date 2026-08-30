@@ -17,6 +17,8 @@ from studio.stdplgns.sss._pipeline import run_sessie_enumeration
 from studio.stdplgns.sss._ruleset_tests import from_reduced_rank_index
 from core.topologies.tooling.rff_encoding import chr_rff
 
+
+# noinspection DuplicatedCode
 class LogView(RichLog):
     """Intercepts stdout and stderr automatically."""
     def on_mount(self):
@@ -29,6 +31,7 @@ class LogView(RichLog):
             self.write(f'[bold red]> stderr:[/bold red] [red]{txt}[/]')
         else:
             if txt: self.write(txt)
+
 
 class P(Plugin):
     name = 'enumerate'
@@ -45,7 +48,6 @@ class P(Plugin):
         self._all_results: list[dict] = []
         self._index_range: slice = slice(None, None)
 
-        # REORDERED: Rules at the bottom. Default values updated.
         self._table_columns = [
             ("Index", "index", True),
             ("Q-Code", "qcode", True),
@@ -105,7 +107,6 @@ class P(Plugin):
 
             yield Label("\nData Export")
 
-            # ADDED: Separate index range for CSV
             self.csv_export_range = Input(value='', placeholder='e.g. 10: or 3:10', id='csv-export-range')
             self.csv_export_range.border_title = "CSV Export Index Range"
             yield self.csv_export_range
@@ -198,6 +199,7 @@ class P(Plugin):
         filter_text = self.filter_class.value.strip().lower() if hasattr(self, 'filter_class') else ""
         hide_filt = self.hide_filtered.value if hasattr(self, 'hide_filtered') else True
 
+        row_num: int = 0
         for row_data in self._all_results:
             idx = row_data["index"]
             if start is not None and idx < start: continue
@@ -208,7 +210,8 @@ class P(Plugin):
 
             visible_data = [row_data[key] for _, key, _ in self._table_columns if key in self.table_controls.selected]
             if visible_data:
-                self.results_table.add_row(*visible_data)
+                self.results_table.add_row(*visible_data, label=str(row_num))
+                row_num += 1
 
     def _toggle_play_stop_buttons(self):
         self.play_button.display, self.stop_button.display = self.stop_button.display, self.play_button.display
@@ -221,7 +224,7 @@ class P(Plugin):
         filename_input = self.export_csv_filename.value.strip()
 
         if not filename_input:
-            filename = "enumeration_results.csv"
+            filename = f"{self.model.file_path.stem}.csv"
         else:
             filename = filename_input
 

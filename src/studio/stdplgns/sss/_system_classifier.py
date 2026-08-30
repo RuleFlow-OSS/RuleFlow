@@ -1,6 +1,7 @@
 from lang.interpreter import FlowLang
 from typing import Dict, Any
 
+
 def classify_system(flow: FlowLang, requested_steps: int) -> Dict[str, Any]:
     halted = flow.current_event.inert
     actual_steps = flow.current_event_idx

@@ -340,7 +340,7 @@ class Flow:
         # emit any signals
         self.on_evolved_step.emit()
 
-    def evolve(self, n_steps: int, break_when_inert: bool = False) -> None:
+    def evolve(self, n_steps: int) -> None:
         """Evolve the system n steps."""
         i: int = 0
         self._dirty_thread = False  # must reset
@@ -348,7 +348,7 @@ class Flow:
             self.n_step_progress = (i + 1) / n_steps
             i += 1
             self._evolve()
-            if break_when_inert and self.current_event.inert:
+            if self.current_event.inert:
                 break
             if self._dirty_thread:
                 break

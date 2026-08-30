@@ -109,7 +109,6 @@ class P(Plugin):
         self._hover_highlight_cells_with_id: dict[int, str] = {}
         self._hover_highlight_cells_in_generation: dict[int, str] = {}
         self._data_table_controls = (  # (control title, column title, is actual column, control key, default value)
-            ("Enable Cursor Mode", None, False, 'cursor-mode', False),
             ("Cell Count", 'Cells', True, 'cell-count', False),
             ("Causal Distance", 'Distance', True, 'causal-distance', False),
             ("Causally Connected", 'Connected', True, 'causally-connected', False),
