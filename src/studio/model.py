@@ -48,8 +48,8 @@ class Model:
 
         # add builtin plugins
         from studio.stdplgns.flow import execute, explore, analysis
-        from studio.stdplgns.sss import run as sss_run, analysis as sss_analysis
-        for module in (execute, explore, analysis, sss_run, sss_analysis):
+        from studio.stdplgns.sss import enumerate as sss_enumerate
+        for module in (execute, explore, analysis, sss_enumerate):
             grab_plugins(module)
 
         # load all plugins classes

@@ -326,7 +326,8 @@ if __name__ == "__main__":
 (-a -j[2])(
     "AAB" AB -> ABA;
     fn<1, 2> -> (1, 2, 3, "A") -ttt;
-    [1] --> AB;
+    [0, 4] --> AB;
+    [0] > AB;
     (1, 2, -3, 4) --> AB;
 )
 (1, 2) ->;
@@ -337,20 +338,20 @@ It is a cool feature!
 """
     ''')
 
-    t = parser.parse(r'''
-@macro("stat.eca.pflow", "AB", 30);
-    ''')
-
-    t = parser.parse(r'''
-# set the initial state
-@init("AB");
-
-# define the sequential rules
-ABA -> AAB;
-A   -> ABA;
-
-# evolve
-@evolve(10);
-        ''')
+#     t = parser.parse(r'''
+# @macro("stat.eca.pflow", "AB", 30);
+#     ''')
+#
+#     t = parser.parse(r'''
+# # set the initial state
+# @init("AB");
+#
+# # define the sequential rules
+# ABA -> AAB;
+# A   -> ABA;
+#
+# # evolve
+# @evolve(10);
+#         ''')
 
     pprint(t)

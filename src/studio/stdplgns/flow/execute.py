@@ -1,5 +1,5 @@
 """
-This plugin provides basic executing/undoing features, hot-reload, and several other utilities for interactive with flows.
+This plugin provides basic executing/undoing features, hot-reload, and several other utilities for interactive flows.
 """
 # Textual Imports
 from textual.widgets import Collapsible, TabPane, Input, Checkbox, Button, ProgressBar, Label, RichLog

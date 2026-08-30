@@ -7,6 +7,6 @@
 @macro("stat.eca.pflow", "AB", 90);
 
 # run n times
-@p_seed(0);
+# @p_seed(0);
 @clear();
 @evolve(40);

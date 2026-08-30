@@ -151,7 +151,6 @@ class Interpreter:
 
             # Prepare Selectors and Targets
             if not instruction['selector']:
-                print(f'Warning: All rules must have a selector. Skipping rule.')
                 continue
             selector = [self.interpret_selector(sd) for sd in instruction['selector']]
             target = [self.interpret_target(td) for td in instruction['target']]

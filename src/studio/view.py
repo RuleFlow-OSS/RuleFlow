@@ -12,6 +12,7 @@ prefer to have a checkbox called exit to project manager when ctrl+q is pressed.
 """
 from pathlib import Path
 from typing import cast, Iterable
+from textual import events
 from textual.css.query import NoMatches
 from textual.app import App, ComposeResult
 from textual.containers import Container, Center, Horizontal, Vertical, ScrollableContainer, HorizontalGroup
@@ -20,18 +21,17 @@ from textual.widget import Widget
 from textual.widgets import (
     DirectoryTree as _DirectoryTree, TextArea, Button, Label,
     Select, TabbedContent, OptionList, Input, SelectionList,
-    Footer, ContentSwitcher, Static, Checkbox, Rule, RadioSet
+    Footer, ContentSwitcher, Static, Checkbox, RadioSet
 )
 from textual.widgets.option_list import Option, DuplicateID as DuplicateIDError
 from textual import on
 
-from lang import parser
 from studio import config
 from studio import model
 from core.signals import Signal  # we don't use Textual builtin signal system due to limitation with widget mounting being required first.
 from lang import parser as flowlang_parser
 import re
-import asyncio
+
 
 LOGO: str = r"""______      _     ______ _                    _____ _             _ _       
 | ___ \    | |    |  ___| |                  /  ___| |           | (_)      
@@ -65,8 +65,8 @@ class ModalDialog(ModalScreen[dict]):
 
     def __init__(self,
                  title: str,
-                 fields: list[dict] = None,
-                 buttons: list[str] = None):
+                 fields: list[dict] | None = None,
+                 buttons: list[str] | None = None):
         super().__init__()
         self.title_text = title
         self.fields_config = fields or []
@@ -126,7 +126,7 @@ class ModalDialog(ModalScreen[dict]):
         self.dismiss(results)
 
     def on_input_submitted(self):
-        self.query_one("#modal-dialog-submit-btn").press()
+        self.query_one("#modal-dialog-submit-btn").press()  # type: ignore
 
 
 class WelcomeScreen(Screen):
@@ -220,11 +220,146 @@ class WelcomeScreen(Screen):
             self.notify('There is no selection to remove!', severity='warning')
 
 
+class HorizontalSplitter(Widget):
+    """A custom widget to handle click-and-drag vertical resizing."""
+
+    DEFAULT_CSS = """
+        HorizontalSplitter {
+            height: 1;
+            width: 100%;
+            color: $text-disabled;
+            background: transparent;
+            content-align: center middle;
+        }
+        HorizontalSplitter:hover {
+            color: $text;
+            background: $boost;
+        }
+        """
+
+    def render(self) -> str:
+        """Renders a horizontal grip line in the center."""
+        return "" if self.is_dragging else "⋯"
+
+    def __init__(self, target_id: str, reverse: bool = False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_id = target_id
+        self.reverse = reverse
+        self.is_dragging = False
+        self.start_y = 0
+        self.start_height = 0
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        try:
+            target = self.parent.query_one(f"#{self.target_id}")
+            self.start_height = target.region.height
+            self.start_y = event.screen_y
+            self.is_dragging = True
+            self.capture_mouse()
+            event.stop()
+        except NoMatches:
+            pass
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        if self.is_dragging:
+            try:
+                target = self.parent.query_one(f"#{self.target_id}")
+                delta_y = event.screen_y - self.start_y
+
+                # If target is below the splitter, dragging UP (negative delta) increases height
+                if self.reverse:
+                    new_height = self.start_height - delta_y
+                else:
+                    new_height = self.start_height + delta_y
+
+                # Impose boundaries (e.g., minimum 5 rows, maximum 40 rows)
+                new_height = max(5, min(new_height, 40))
+
+                target.styles.height = new_height
+            except NoMatches:
+                pass
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        if self.is_dragging:
+            self.release_mouse()
+            self.is_dragging = False
+
+
+class VerticalSplitter(Widget):
+    """A custom widget to handle click-and-drag resizing of adjacent containers."""
+    DEFAULT_CSS = """
+        VerticalSplitter {
+            width: 1;
+            height: 100%;
+            color: $text-disabled; /* Greys out the grip lines */
+            background: transparent;
+            content-align: center middle; /* Centers the grip character */
+        }
+        VerticalSplitter:hover {
+            color: $text; /* Brightens the grip */
+            background: $boost; /* Adds a very subtle, soft background highlight */
+        }
+        """
+
+    def render(self) -> str:
+        """Renders a vertical grip line in the center."""
+        return "" if self.is_dragging else "⋮"
+
+    def __init__(self, target_id: str, reverse: bool = False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_id = target_id
+        self.reverse = reverse          # If the target is on the right of the splitter, we need to reverse the math
+        self.is_dragging = False
+        self.start_x = 0
+        self.start_width = 0
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        """Triggered when the user clicks the splitter."""
+        try:
+            # self.parent ensures we grab the container strictly in the current layout scope
+            target = self.parent.query_one(f"#{self.target_id}")
+            self.start_width = target.region.width
+            self.start_x = event.screen_x
+            self.is_dragging = True
+            self.capture_mouse()
+            event.stop()
+        except NoMatches:
+            pass
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        """Triggered when the user drags the mouse."""
+        if self.is_dragging:
+            try:
+                target = self.parent.query_one(f"#{self.target_id}")
+                if not target.display:
+                    target.display = True
+                delta_x = event.screen_x - self.start_x
+
+                # Calculate new width based on which side the target is on
+                if self.reverse:
+                    new_width = self.start_width - delta_x
+                else:
+                    new_width = self.start_width + delta_x
+
+                # Impose boundaries (e.g., minimum 15 columns, maximum 80 columns)
+                new_width = max(15, min(new_width, 80))
+
+                # Apply the new width via CSS injection
+                target.styles.width = new_width
+            except NoMatches:
+                pass
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        """Triggered when the user releases the click."""
+        if self.is_dragging:
+            self.release_mouse()
+            self.is_dragging = False
+
+
 class EditorInstance(Widget):
     BINDINGS = [  # NOTE: hide by adding `, show=False` to a binding
         ("ctrl+s", "save_file", "Save File"),
         ("ctrl+r", "run", "Run"),
-        ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
         ("shift+f1", "toggle_code_editor", "Toggle Code"),
         ("shift+f2", "toggle_panel", "Toggle Panel"),
         ("ctrl+f2", "toggle_controls", "Toggle Controls"),
@@ -324,12 +459,14 @@ class EditorInstance(Widget):
 
             # Code Editor
             self.code_editor_text_area: TextArea = TextArea.code_editor(
-                text=self.MODEL.read_file(),
+                text=self.MODEL.read_file(),  # type: ignore
                 id="code-editor",
                 theme='css',
                 language=config.DEFAULT_SYNTAX_HIGHLIGHTING.get(self.MODEL.file_path.suffix, None)
             )
             yield self.code_editor_text_area
+
+            yield HorizontalSplitter(target_id="plugin-panel", reverse=True)
 
             # Plugin Panel
             with TabbedContent(id="plugin-panel"):
@@ -337,6 +474,8 @@ class EditorInstance(Widget):
                 for plugin in self.MODEL.plugins:
                     if _ := plugin.panel():
                         yield _
+
+        yield VerticalSplitter(target_id="plugin-controls", reverse=True)
 
         # --- RIGHT COLUMN: Plugin Control Menu ---
         with Vertical(id="plugin-controls"):
@@ -369,20 +508,11 @@ class EditorScreen(Screen):
     The main IDE interface matching Image 2 with dynamic sidebar logic.
     """
     BINDINGS = [  # NOTE: hide by adding `, show=False` to a binding
-        ("ctrl+shift+f1", "toggle_max", "Toggle Max"),
         ("ctrl+f1", "toggle_project_dir", "Toggle Files")
     ]
-    selected_file: DirectoryTree.FileSelected = None
+    selected_file: DirectoryTree.FileSelected | None = None
     selected_variant: str = 'main'
     variants: list[str] = []
-
-    def action_toggle_max(self):
-        if not self.focused:  # if nothing is focused
-            return
-        if self.focused.is_in_maximized_view:
-            self.minimize()
-        else:
-            self.maximize(self.focused)
 
     def action_toggle_project_dir(self):
         sidebar = self.query_one("#project-directory")
@@ -399,6 +529,8 @@ class EditorScreen(Screen):
                 yield Button('-', compact=True, classes='red small-btn', id="btn-remove-variant")
             yield DirectoryTree(self.app.project_path, id="project-dir-tree")
             yield Button('↻  Refresh Directory', id='btn_refresh_project_dir', classes='full-width gray')
+
+        yield VerticalSplitter(target_id="project-directory")
 
         # --- Workspace Section ---
         self.loading_label = Label('> Please select a file <', id='loading-label')

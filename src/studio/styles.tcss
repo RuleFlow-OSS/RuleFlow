@@ -143,7 +143,6 @@ EditorInstance {
 #project-directory {
     width: 1fr;
     height: 100%;
-    border-right: solid #2b2b2b;
     min-width: 25;
 }
 
@@ -165,7 +164,6 @@ EditorInstance {
 
 #code-editor {
     height: 1fr;
-    margin-bottom: 1;
 }
 
 #plugin-panel {
@@ -175,7 +173,6 @@ EditorInstance {
 #plugin-controls {
     width: 1fr;  /* shares space with #workspace */
     height: 100%;
-    border-left: solid #2b2b2b;
     min-width: 30;
 }
 
