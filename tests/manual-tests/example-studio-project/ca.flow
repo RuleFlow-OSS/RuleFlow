@@ -2,9 +2,11 @@
 @init("A" * 15 + "B" + 15 * "A");
 
 # define the rules
+-p_rule[0.5]
 @macro("stat.ca.preset");
-@macro("stat.eca.pflow", "AB", 30);
+@macro("stat.eca.pflow", "AB", 90);
 
 # run n times
+@p_seed(0);
 @clear();
-@evolve(14);
+@evolve(40);

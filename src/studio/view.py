@@ -232,7 +232,7 @@ class EditorInstance(Widget):
 
     def action_run(self):
         """Action to press the run button upon this action..."""
-        try: self.query_one('#toolbar-btn-run').press()
+        try: self.query_one('#toolbar-btn-exec').press()
         except NoMatches: pass
 
     def action_save_file(self):
@@ -522,7 +522,7 @@ class EditorScreen(Screen):
 
 class Main(App):
     project_name: str = ''
-    project_path: Path = ''
+    project_path: Path = Path()
     sig_exiting_studio: Signal = Signal()
 
     CSS_PATH = "styles.tcss"

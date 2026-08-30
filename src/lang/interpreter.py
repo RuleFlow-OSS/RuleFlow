@@ -4,6 +4,7 @@ Implements the code that actually interprets and runs the flows.
 from typing import Any, Iterator, Callable
 from collections.abc import Sequence
 import numpy as np
+from random import Random
 import importlib.util
 from pathlib import Path
 
@@ -135,7 +136,8 @@ class Interpreter:
         raise ValueError(f"Unknown selector of type '{t_type}' with value {t_value}.")
 
     def interpret_instructions(self, instructions: Sequence[dict[str, Any]], global_flags: dict[str, Any],
-                               regex_searcher: VectorRegexSearch, literal_searcher: VectorSearch) -> Iterator[BaseRule]:
+                               regex_searcher: VectorRegexSearch, literal_searcher: VectorSearch,
+                               random_engine: Random) -> Iterator[BaseRule]:
         """
         Iterates over the flat list of instructions, instantiates the correct
         Rule subclass, merges flags, and initializes fields.
@@ -155,7 +157,7 @@ class Interpreter:
             target = [self.interpret_target(td) for td in instruction['target']]
 
             # Instantiate Rule
-            rule_instance: BaseRule = rule_class(selector, target, regex_searcher, literal_searcher)
+            rule_instance: BaseRule = rule_class(selector, target, regex_searcher, literal_searcher, random_engine)
 
             # Merge and Assign Flags (Global < Rule/Group)
             final_flags = global_flags.copy()
@@ -201,6 +203,7 @@ class FlowLang(FlowLangBase):
         """Stateful helpers are defined here such as Vector Classes and Interpreters"""
         super().__init__()
         self.ast: dict[str, Any] = {}
+        self._diff_check_hash: int = 0
 
         # Vector backend name
         self.vector_backend_type: VectorBackendType = 'vector'
@@ -208,59 +211,66 @@ class FlowLang(FlowLangBase):
         # Set up the searcher
         self.regex_searcher = VectorRegexSearch()
         self.literal_searcher = VectorSearch()
+        self.random_engine: Random = Random(0)
 
         # Set up the interpreter
         self.interpreter = Interpreter()
 
         # NOTE: make sure to update any preset flows (if the below directives are used in them) when names are changed!
-        self.interpreter.set_directive_group(
+        self.interpreter.set_directive_group(  # directives that must be run before anything else
             'initializer',
             {
-                'init': self.__init,  # used to set the initial universe conditions.
                 'mem': lambda name: setattr(self, 'vector_backend_type', name),  # used to set the memory backend
                 'regex_for_literal_selectors': self.interpreter.use_regex_for_literal_selectors,
+
+                # import names that can be used for selector or target callables
                 'import': lambda path, *names: self.interpreter.set_instruction_scope(
                     import_from_file(path, *names)
-                ),  # import names that can be used for selector or target callables
+                ),
                 'reset_imports': self.interpreter.reset_instruction_scope,  # clear all imports
                 # 'reset_state': lambda: None,  # TODO: implement a method to reset the settings caused by directive calls.
-
-                # object exposure
-                'self': self,
             }
         )
         self.interpreter.set_directive_group(
             'program',
             {
+                'init': self.__init,  # used to set the initial universe conditions.
                 'evolve': self.evolve,
                 'regress': self.regress,
                 'clear': self.clear_evolution,
+                # rule settings
                 'merge': self.__merge_group,
                 'compress': self.__compress_group,
+                # randomness engine seeding
+                'p_seed': self.random_engine.seed,
+                # object exposure
+                'self': self,
             }
         )
 
     def interpret(self, src: str, *args, bootstrapped: str | None = None, **kwargs) -> None:
         self.ast: dict[str, Any] = get_bootstrapped_parse_function(bootstrapped)(src, *args, **kwargs) \
             if bootstrapped else parse(src)
+        directives: list[str] = self.ast['directives']
+        global_flags: dict[str, Any] = self.ast['global_flags']
+        instructions: Sequence[dict[str, Any]] = self.ast['instructions']
 
         # interpret initializer directives
-        self.interpreter.interpret_directives("initializer", self.ast['directives'])
+        self.interpreter.interpret_directives("initializer", directives)
 
         # interpret the instructions and convert them to the rule instances
-        self._last_instructions_hash: int = 0
-        instructions: Sequence[dict[str, Any]] = self.ast['instructions']
-        global_flags: dict[str, Any] = self.ast['global_flags']
-        instructions_hash: int = hash(str(self.ast['instructions']) + str(self.ast['global_flags']))
-        if instructions_hash != self._last_instructions_hash:
+        if (h:=hash(str(instructions) + str(global_flags))) != self._diff_check_hash:
+            self._diff_check_hash = h
             rule_objects: list[BaseRule] = list(
-                self.interpreter.interpret_instructions(instructions, global_flags, self.regex_searcher, self.literal_searcher)
+                self.interpreter.interpret_instructions(
+                    instructions, global_flags,
+                    self.regex_searcher, self.literal_searcher, self.random_engine
+                )
             )
             self.set_ruleset(RuleSet(rule_objects))
-            self._last_instructions_hash = instructions_hash
 
         # interpret program-level directives
-        self.interpreter.interpret_directives("program", self.ast['directives'])
+        self.interpreter.interpret_directives("program", directives)
 
     def __init(self, *spaces: str | tuple[int | str, ...], as_path: bool = False, **kwargs):
         space_hash: int = hash(spaces)
@@ -288,6 +298,8 @@ class FlowLang(FlowLangBase):
     def __merge_group(self, *identifiers: int | str):
         """A directive to merge a particular group into a chain (a composite rule)"""
         rules: list[BaseRule] = self.ruleset.rules  # type: ignore
+        for r in rules:  # zero out any previous chains to prevent build-up bugs
+            r.reset_chain_metadata()
         for i in range(len(rules)):
             head: BaseRule = rules[i]
             if head.disabled:
@@ -324,60 +336,46 @@ class FlowLang(FlowLangBase):
 
 
 if __name__ == "__main__":
-    code = """
-# initial state
-@init("A" * 15 + "B" + 15 * "A");
-
-# define the rules
-@macro("stat.ca.preset");
-@macro("stat.eca.pflow", "AB", 30);
-
-# run n times
-@clear();
-@evolve(14);
-        """
-    flow = FlowLang()
-    flow.interpret(code)
-    from pprint import pprint
-    for r in flow.ruleset.rules:
-        print(r.disabled, r)
-    exit()
-    pass
     from pprint import pprint
     import psutil
     import os
     import gc
     import timeit
 
-    def get_mem():
-        """Returns current resident set size in MB."""
-        process = psutil.Process(os.getpid())
-        return process.memory_info().rss / 1024 / 1024
-
-    gc.collect()
-    mem_start = get_mem()
-
-    # Run Simulation
     code = """
-    @init(("A", 66));
-    @macro("stat.ca.preset");
-    ABA -> (65, 65, "B");
-    (65) -> ABA;
-    """
-    flow = FlowLang()
-    flow.interpret(code)
+# initial state
+@init("A" * 15 + "B" + 15 * "A");
 
-    time = timeit.timeit(lambda: flow.evolve(20), number=1)
-    mem_end = get_mem()
-    print(f"Total Memory of evolution: {mem_end - mem_start:.2f} MB")
-    print(f"Total time spent: {time:.2f} seconds\n")
+# define the rules
+-p_rule[.8]
+@macro("stat.ca.preset");
+@macro("stat.eca.pflow", "AB", 90);
+"""
 
     # Evolution Table Rendering
     from core.topologies.tooling.prettier import SpaceState1DFormatter
     from rich.console import Console
     formatter = SpaceState1DFormatter()
+    formatter.base_style = 'black'
     formatter.cell_width = 3
     console = Console(width=1000)
+
+    flow = FlowLang()
+
+    print(f'==== First Iteration ====')
+    flow.interpret(code)
+    flow.evolve(20)
     for event in flow.events:
         # noinspection bad-argument-type
         console.print(formatter(next(event.spaces)))
+
+    # for i in range(5):
+    #     print(f'==== Iteration {i} ====')
+    #
+    #     flow.clear_evolution()
+    #     flow.interpret(code)
+    #     flow.evolve(20)
+    #
+    #     for event in flow.events:
+    #         # noinspection bad-argument-type
+    #         console.print(formatter(next(event.spaces)))

@@ -134,18 +134,18 @@ class Vector(MutableSequence):
 
 
 class CellVector(MutableSequence):
-    __slots__ = ('data', 'generations', 'ids', 'id_start', 'generation', 'prev_gen')
+    __slots__ = ('data', 'gens', 'ids', 'id_start', 'generation', 'prev_gen')
 
     def __init__(self,
-                 data: Sequence[int],
-                 generation: int = 0,
+                 quanta: Sequence[int],
+                 gen: int = 0,
                  id_start: int = 0,
                  dtypes: tuple[np.unsignedinteger, ...] = (np.uint8, np.uint64, np.uint64)):  # type: ignore
-        self.data: Vector = Vector(data, dtype=dtypes[0])
-        self.generations: Vector = Vector(np.full(len(self.data), generation, dtype=dtypes[1]), dtype=dtypes[1])
+        self.data: Vector = Vector(quanta, dtype=dtypes[0])
+        self.gens: Vector = Vector(np.full(len(self.data), gen, dtype=dtypes[1]), dtype=dtypes[1])
         self.ids: Vector = Vector(np.arange(id_start, id_start + len(self.data), dtype=dtypes[2]), dtype=dtypes[2])
         self.id_start: int = id_start + len(self.data)
-        self.generation: int = generation
+        self.generation: int = gen
         self.prev_gen: CellVector = self  # we don't track next gens due to multiple branches being beyond this scope...
 
     @property
@@ -153,11 +153,11 @@ class CellVector(MutableSequence):
         yield from self.get_cells(slice(None, None))
 
     def get_cell(self, index: int) -> Cell:
-        return Cell(self.data[index], self.generations[index], self.ids[index])
+        return Cell(self.data[index], self.gens[index], self.ids[index])
 
     def get_cells(self, index: slice) -> Iterator[Cell]:
         data = self.data
-        generations = self.generations
+        generations = self.gens
         ids = self.ids
         for i in range(*index.indices(len(self.data))):
             yield Cell(data[i], generations[i], ids[i])
@@ -166,7 +166,7 @@ class CellVector(MutableSequence):
         """Return a copy (next gen) of the current cell vector."""
         o: CellVector = object.__new__(CellVector)
         o.data = copy(self.data)
-        o.generations = copy(self.generations)
+        o.gens = copy(self.gens)
         o.ids = copy(self.ids)
         o.id_start = self.id_start
         o.generation = self.generation + 1
@@ -197,19 +197,19 @@ class CellVector(MutableSequence):
     def __setitem__(self, index, value) -> None:
         if isinstance(index, slice):
             self.data[index] = value
-            self.generations[index] = np.full(len(value), self.generation)
+            self.gens[index] = np.full(len(value), self.generation)
             self.ids[index] = np.arange(self.id_start, self.id_start + len(value))
             self.id_start += len(value)
         else:
             self.data[index] = value
-            self.generations[index] = self.generation
+            self.gens[index] = self.generation
             self.ids[index] = self.id_start
             self.id_start += 1
 
     def __delitem__(self, index: int | slice):
         # propagate to each attribute
         self.data.__delitem__(index)
-        self.generations.__delitem__(index)
+        self.gens.__delitem__(index)
         self.ids.__delitem__(index)
 
     def insert(self, index: int, value: int) -> None:
@@ -234,7 +234,7 @@ class CellVector(MutableSequence):
 class CellVectorVault:
     def __init__(self, data: Sequence[int]):
         pass  # TODO: the getter should be a generator that leaves persistence up to the caller.
-        # self.data: CellVector | None         # the vec actual data
+        # self.quanta: CellVector | None       # the vec
         # self.frontier: Vector                # the latest update (so that searches are efficient)
         # self.pieces: list[Piece] = []        # the updates stored as pieces for this branch
         # self.prev_gen: CellVectorVault       # ...
@@ -245,14 +245,14 @@ class CellVectorVault:
 if __name__ == '__main__':
     a = CellVector([1, 2, 3, 4, 5, 6])
     print(a.data)
-    print(a.generations)
+    print(a.gens)
     print(a.ids)
 
     print('====')
     b = a.next_gen()
     b[-2:] = [4, 3, 2, 1]
     print(b.data)
-    print(b.generations)
+    print(b.gens)
     print(b.ids)
 
     print('====')
@@ -260,4 +260,4 @@ if __name__ == '__main__':
     c.append(12)
     print(c.data)
     print(c.ids)
-    print(c.generations)
+    print(c.gens)

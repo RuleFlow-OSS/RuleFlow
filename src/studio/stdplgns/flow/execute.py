@@ -87,7 +87,7 @@ class P(Plugin):
                 if self.model.file_path.suffix == '.wpflow':
                     yield Button('Terminate Wolfram', id="terminate-wolfram")
         self.regress_steps = Input(type='integer', value='1')
-        self.regress_steps.border_title = 'Regression Steps'
+        self.regress_steps.border_title = 'Regress Steps'
         yield self.regress_steps
         with Collapsible(title='Hot Reload', collapsed=False):
             self.hot_mode = Checkbox('Enable hot reload mode', id='hot-reload')

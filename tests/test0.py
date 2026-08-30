@@ -26,3 +26,10 @@
 # a = np.frombuffer(ascii.encode(codec), dtype=dtype)
 # print(a)
 # print(a.tobytes())
+from random import Random
+r = Random(0)
+for _ in range(3):
+    print(r.random())
+r.seed(0)
+for _ in range(3):
+    print(r.random())

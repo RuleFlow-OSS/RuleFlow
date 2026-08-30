@@ -583,8 +583,6 @@ class P(Plugin):
         if cell_width == 0:
             cell_width = 1
         cell_idx: int = offset // cell_width
-        table_cell_key: CellKey = self.data_table.coordinate_to_cell_key(cell_coord)
-        event_idx: int = int(table_cell_key.row_key.value)  # type: ignore
 
         # avoid more repetition here
         if self.__last_hover_coord_and_cell_idx == (_:=(cell_coord, cell_idx)):
@@ -592,7 +590,12 @@ class P(Plugin):
         self.__last_hover_coord_and_cell_idx = _
 
         # grab all relevant information about the selected space
-        space_state: SpaceState = self._selected_flow_events[event_idx][0]
+        table_cell_key: CellKey = self.data_table.coordinate_to_cell_key(cell_coord)
+        event_idx: int = int(table_cell_key.row_key.value)  # type: ignore
+        try:
+            space_state: SpaceState = self._selected_flow_events[event_idx][0]
+        except IndexError:  # can prevent crashes at certain times caused by event_idx out of range (for some reason)
+            return
         if cell_idx >= len(space_state.vec):
             self._reset_hovered_cell_label()
             self._reset_hovered_cell_highlights()

@@ -4,6 +4,7 @@ Future Considerations:
 - We will need to create different implementations for higher dimensions spaces.
 """
 from typing import Sequence, NamedTuple, Literal, cast, Iterator, Self, Callable
+from random import Random
 import numpy as np
 from core.numlib import INF
 from core.signals import Signal
@@ -62,12 +63,14 @@ class BaseRule(RuleABC):
 
     def __init__(self, selector: Sequence[Selector], target: Sequence[Target],
                  regex_searcher: VectorRegexSearch,
-                 literal_searcher: VectorSearch):
+                 literal_searcher: VectorSearch,
+                 random_engine: Random):
         super().__init__()
         self.selector: Sequence[Selector] = selector  # used by self.match()
         self.target: Sequence[Target] = target  # used by self.apply()  # we use Sequence because it fits our grammar more elegantly, even though it adds not functionality.
         self._regex_searcher: VectorRegexSearch = regex_searcher
         self._literal_searcher: VectorSearch = literal_searcher
+        self._random_engine: Random = random_engine
 
         # Complex Functionality
         self.chain: list[BaseRule] = [self]  # so that multiple rules can be chained to this one. Each rule here is treated as though it is "self".
@@ -83,7 +86,7 @@ class BaseRule(RuleABC):
         self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta vec)
         self.no_initial_branch: bool = False  # no initial branch the last space before executing rule (just modify last space) (can still be branched depending on `-pl` limit)
         self.no_delta_submit: bool = False  # if no new states are to be submitted (even if they do occur)
-        self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can be executed per run without breaking into another branch).
+        self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can be executed per call without breaking into another branch).
         self.branch_limit: int = 0  # branch limit per run (how many branches can be created).
         self.branch_origin: Literal["prev", "current"] = "prev"  # does not apply to the first branch from previous event.
         self.crp: Literal["branch", "branch_nbl", "skip", "break", "ignore"] = "ignore"  # conflict resolution protocol. Note: at some point this could be extended to exclude BOTH conflicts, not just the one conflicting with the other.
@@ -91,11 +94,9 @@ class BaseRule(RuleABC):
         # rule life flags
         self.lifespan: int = INF  # how many times this rule is allowed to be successfully applied. This is the overall effect a rule can have before it dies.
 
-        # stochastic flags  TODO: implement these
-        self.p_seed: int | None = None  # determines the seed... if the outcome will be the same every time.
-        self.p_match: int | None = None  # probability that a match will be counted.
+        # stochastic flags (A value of None here means don't use that attribute at all)
+        self.p_rule: int | None = None  # probability that a match will be counted.
         self.p_space: int | None = None  # probability that a space will be selected.
-        self.p_apply: int | None = None  # probability that a rule will apply() at all.
 
         # Note that additional flags can be set in the syntax, however, they will have no meaning unless included in the control flow by subclassing and modifying particular rule.
 
@@ -106,6 +107,10 @@ class BaseRule(RuleABC):
         self.on_execution: Signal[RuleMatch, int] = Signal()
         self.on_branch: Signal[RuleMatch, int] = Signal()
         self.on_conflict: Signal[RuleMatch, int] = Signal()
+
+    def reset_chain_metadata(self):
+        self.chain = [self]
+        self.is_in_chain = False
 
     def __repr__(self):
         return f"{self.__class__.__name__}({[s.selector for s in self.selector]}, {[t.target for t in self.target]})"
@@ -143,6 +148,12 @@ class BaseRule(RuleABC):
             for self in top_self.chain:
                 if self.disabled:  # we must check if the rule has been disabled in case the rule is in a chain (has been merged)
                     continue
+                if self.p_space is not None:  # handle probability
+                    if self._random_engine.random() > self.p_space:
+                        break
+                if self.p_rule is not None:  # handle probability
+                    if self._random_engine.random() > self.p_rule:
+                        continue
                 for pattern in self.selector:
                     finds: Iterator[tuple[int, int]]
                     if pattern.type == 'literal':

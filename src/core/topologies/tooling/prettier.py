@@ -115,7 +115,7 @@ class SpaceState1DFormatter:
             highlight_cells_in_generation = self.highlight_cells_in_generation
             encode_using_property = self.encode_using_property
             style_using_property = self.style_using_property
-            for p in zip(s.vec.data, s.vec.generations, s.vec.ids):
+            for p in zip(s.vec.data, s.vec.gens, s.vec.ids):
                 highlight_style: str = (highlight_cells_with_id.get(p[2], '') or
                                         highlight_cells_in_generation.get(p[1], ''))
                 char: str = ordinal_render(p[encode_using_property])
@@ -127,7 +127,7 @@ class SpaceState1DFormatter:
                 pos += char_len
                 chars.append(char)
         else:
-            sources: tuple[Sequence[int], Sequence[int], Sequence[int]] = (s.vec.data, s.vec.generations, s.vec.ids)
+            sources: tuple[Sequence[int], Sequence[int], Sequence[int]] = (s.vec.data, s.vec.gens, s.vec.ids)
             ordinal_src: Sequence[int] = sources[self.encode_using_property]
             style_src: Sequence[int] = sources[self.style_using_property]
             for os, ss in zip(ordinal_src, style_src):

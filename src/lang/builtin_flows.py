@@ -33,7 +33,7 @@ binary_patterns: list[tuple[int, int, int]] = [
     (1, 1, 1), (1, 1, 0), (1, 0, 1), (1, 0, 0),
     (0, 1, 1), (0, 1, 0), (0, 0, 1), (0, 0, 0)
 ]
-rule_bits = f'{index:08b}'  # Convert index to 8-bit binary string (e.g., 30 -> '00011110')
+rule_bits = f'{index:08b}'
 for (b1, b2, b3), result_bit in zip(binary_patterns, rule_bits):
     ---
     {charset[b1]}{charset[b2]}{charset[b3]} --> .{charset[int(result_bit)]};
