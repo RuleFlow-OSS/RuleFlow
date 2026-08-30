@@ -155,7 +155,7 @@ EditorInstance {
 
 #workspace-toolbar {
     height: auto;
-    padding: 1 2;
+    padding: 1 2 1 1;
 }
 
 #select-flow {  /*The flow selector dropdown*/

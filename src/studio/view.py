@@ -374,7 +374,7 @@ class EditorInstance(Widget):
         m: model.Model = self.MODEL
         m.write_file(self.code_editor_text_area.text)
         self._is_dirty = False
-        self.open_file_label.update(f"{m.file_path.name}")
+        self.open_file_label.update(m.file_path.name)
         # self.notify(f"Saved the \"{m.file_path.name}\" file.")
 
     def action_toggle_controls(self):
@@ -451,6 +451,9 @@ class EditorInstance(Widget):
             # Top Toolbar
             with Horizontal(id='workspace-toolbar') as wt:
                 self.workspace_toolbar: Horizontal = wt  # this way plugins can add buttons or widgets here
+                self.reload_btn = Button('⟳', id='reload-file', classes='small-btn gray', tooltip='Reload', compact=True)
+                self.reload_btn.can_focus = False
+                yield self.reload_btn
                 self.open_file_label = Label(self.MODEL.file_path.name, classes='gray')
                 yield self.open_file_label
                 if (_:=self.screen.selected_variant) != 'main':
@@ -492,6 +495,12 @@ class EditorInstance(Widget):
         container: ContentSwitcher = self.query_one('#sidebar-switcher')
         container.current = event.pane.id  # make switch
         self.query_one('#plugin-controls-header').content = f"⭘ {event.pane._title}"
+
+    @on(Button.Pressed, '#reload-file')
+    def _hande_reload_button(self):
+        self.code_editor_text_area.text = self.MODEL.read_file()
+        self._is_dirty = False
+        self.open_file_label.update(self.MODEL.file_path.name)
 
     @on(TextArea.Changed, "#code-editor")
     def _on_editor_text_changed(self, event: TextArea.Changed) -> None:

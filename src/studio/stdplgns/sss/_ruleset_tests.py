@@ -1,15 +1,15 @@
 import math
-from typing import TypedDict, List, Tuple, Optional
+from typing import TypedDict, Optional
 
 
 class RuleSetData(TypedDict):
     Index: int
     QCode: str
-    RuleSet: List[Tuple[Tuple[int, ...], Tuple[int, ...]]]
+    RuleSet: list[tuple[tuple[int, ...], tuple[int, ...]]]
     Weight: int
 
 
-def rule_weight(ruleset: List[Tuple[Tuple[int, ...], Tuple[int, ...]]]) -> int:
+def rule_weight(ruleset: list[tuple[tuple[int, ...], tuple[int, ...]]]) -> int:
     """Calculates the total weight of a ruleset (0-based ordinals: A=0 -> weight 1, B=1 -> weight 2...)."""
     return sum(val + 1 for pair in ruleset for s in pair for val in s)
 

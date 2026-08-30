@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Any
 from lang.interpreter import FlowLang
 from core.topologies.tooling.rff_encoding import chr_rff
 from studio.stdplgns.sss._system_classifier import classify_system
@@ -9,7 +9,8 @@ def run_sessie_enumeration(
         workflow_config: dict,
         on_progress: Callable[[float], None],
         on_result: Callable[[int, str, str, int, str, str], None],
-        is_cancelled: Callable[[], bool]
+        is_cancelled: Callable[[], bool],
+        on_log: Callable[[str], None] | Any
 ) -> None:
     search = workflow_config.get('search_space', {})
     start_idx = search.get('start_index', 1)
@@ -35,7 +36,7 @@ def run_sessie_enumeration(
 
     while current_idx <= end_idx:
         if is_cancelled():
-            print("[bold orange]Execution cancelled by user.[/]")
+            on_log("[bold orange]Execution cancelled by user.[/]")
             break
 
         rs_data = tests.from_reduced_rank_index(current_idx)
@@ -46,8 +47,7 @@ def run_sessie_enumeration(
             target_idx = func(rs_data)
             if target_idx is not None:
                 rules_display = ", ".join(
-                    [f"{''.join(chr_rff(c) for c in m)}->{''.join(chr_rff(c) for c in r)}" for m, r in
-                     rs_data["RuleSet"]])
+                    [f"{''.join(chr_rff(c + 65) for c in m)} -> {''.join(chr_rff(c + 65) for c in r)}" for m, r in rs_data["RuleSet"]])
                 on_result(current_idx, rs_data["QCode"], rules_display, 0, "Filtered", f"Skipped by {name}")
                 current_idx = target_idx
                 jumped = True
@@ -59,13 +59,13 @@ def run_sessie_enumeration(
         # 2. Simulate via FlowLang Generation
         flow_code = f'@init("{init_state}");\n'
         for match, replace in rs_data["RuleSet"]:
-            m_str = "".join(chr_rff(c) for c in match)
-            r_str = "".join(chr_rff(c) for c in replace)
+            m_str: str = str(match)
+            r_str: str = str(replace)
 
             if not m_str and not r_str:
                 continue
             elif not m_str:
-                flow_code += f"> {r_str};\n"
+                flow_code += f"[0] > {r_str};\n"
             elif not r_str:
                 flow_code += f"{m_str} >< ;\n"
             else:
@@ -82,10 +82,11 @@ def run_sessie_enumeration(
             on_result(current_idx, rs_data["QCode"], rules_display, flow.current_event_idx, cls_data["classification"],
                       "Simulated")
         except Exception as e:
-            print(f"[bold red]Simulation Error at Index {current_idx}:[/] {e}")
+            on_log(f"[bold red]Simulation Error at Index {current_idx}:[/] {e}")
 
         current_idx += 1
         on_progress(min(((current_idx - start_idx) / total_runs) * 100, 100))
 
-    on_progress(100.0)
-    print("[bold green]Sessie Pipeline Complete![/]")
+    if not is_cancelled():
+        on_log("[bold green]Sessie Pipeline Complete![/]")
+        on_progress(100.0)
