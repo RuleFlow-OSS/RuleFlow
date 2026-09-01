@@ -591,9 +591,12 @@ class P(Plugin):
         # grab all relevant information about the selected space
         table_cell_key: CellKey = self.data_table.coordinate_to_cell_key(cell_coord)
         event_idx: int = int(table_cell_key.row_key.value)  # type: ignore
-        try:
-            space_state: SpaceState = self._selected_flow_events[event_idx][0]
-        except IndexError:  # can prevent crashes at certain times caused by event_idx out of range (for some reason)
+        space_state: SpaceState | None = None
+        for s, e in self._selected_flow_events:
+            if e.time == event_idx:
+                space_state = s
+                break
+        if space_state is None:
             return
         if cell_idx >= len(space_state.vec):
             self._reset_hovered_cell_label()

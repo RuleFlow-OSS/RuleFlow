@@ -6,5 +6,4 @@ ABA -> AAB;
 A   -> ABA;
 
 # evolve
-@clear();
-@evolve(20);
+@evolve(10);
