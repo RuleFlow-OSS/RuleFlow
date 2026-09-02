@@ -2,8 +2,11 @@
 @init("AB");
 
 # define the sequential rules
-ABA -> AAB;
-A   -> ABA;
+# ABA -> AAB;
+# A   -> ABA;
+AAAB -> BAA;
+AAA -> BB;
+B -> AAB;
 
 # evolve
 @evolve(10);

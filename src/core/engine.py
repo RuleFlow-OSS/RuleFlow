@@ -340,15 +340,16 @@ class Flow:
         # emit any signals
         self.on_evolved_step.emit()
 
-    def evolve(self, n_steps: int) -> None:
-        """Evolve the system n steps."""
+    def evolve(self, n_steps: int, break_on_inert: bool = False) -> None:
+        """Evolve the system n steps.
+        break_on_inert allows the next step to essentially retry (useful for complex or probabilistic rules)."""
         i: int = 0
         self._dirty_thread = False  # must reset
         while i < n_steps:
             self.n_step_progress = (i + 1) / n_steps
             i += 1
             self._evolve()
-            if self.current_event.inert:
+            if break_on_inert and self.current_event.inert:
                 break
             if self._dirty_thread:
                 break

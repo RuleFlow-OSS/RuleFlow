@@ -469,7 +469,7 @@ class EditorInstance(Widget):
             )
             yield self.code_editor_text_area
 
-            yield HorizontalSplitter(target_id="plugin-panel", reverse=True)
+            yield HorizontalSplitter(target_id="code-editor")  # TODO: fix bug weird bug where dragging sidebar size make collapsing code not work properly.
 
             # Plugin Panel
             with TabbedContent(id="plugin-panel"):
