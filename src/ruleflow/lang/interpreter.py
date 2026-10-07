@@ -335,33 +335,65 @@ class FlowLang(FlowLangBase):
 
 
 if __name__ == "__main__":
-
     code = """
-# initial state
-@init("A" * 15 + "B" + 15 * "A");
+# set the initial state
+@init("AB");
 
-# define the rules
--p_rule[.8]
-@macro("stat.ca.preset");
-@macro("stat.eca.pflow", "AB", 90);
+# define the sequential rules
+-gb[True]
+
+ABA -> AAB;
+A   -> ABA;
+
+# evolve
+@evolve(10);
 """
 
     # Evolution Table Rendering
     from ruleflow.analysis.prettier import SpaceState1DFormatter
     from rich.console import Console
+    from rich.table import Table
+
     formatter = SpaceState1DFormatter()
     formatter.base_style = 'black'
-    formatter.cell_width = 3
+    formatter.cell_width = 2
+    formatter.encode_ordinals = True
     console = Console(width=1000)
 
     flow = FlowLang()
-
-    print(f'==== First Iteration ====')
     flow.interpret(code)
-    flow.evolve(20)
+    flow.evolve(10)
     for event in flow.events:
-        # noinspection bad-argument-type
-        console.print(formatter(next(event.spaces)))
+        for s in event.spaces:
+            console.print(formatter(s), end=', ')
+        console.print()
+
+    #     code = """
+    # # initial state
+    # @init("A" * 15 + "B" + 15 * "A");
+    #
+    # # define the rules
+    # -p_rule[.8]
+    # @macro("stat.ca.preset");
+    # @macro("stat.eca.pflow", "AB", 90);
+    # """
+    #
+    #     # Evolution Table Rendering
+    #     from ruleflow.analysis.prettier import SpaceState1DFormatter
+    #     from rich.console import Console
+    #     formatter = SpaceState1DFormatter()
+    #     formatter.base_style = 'black'
+    #     formatter.cell_width = 3
+    #     console = Console(width=1000)
+    #
+    #     flow = FlowLang()
+    #
+    #     print(f'==== First Iteration ====')
+    #     flow.interpret(code)
+    #     flow.evolve(20)
+    #     for event in flow.events:
+    #         # noinspection bad-argument-type
+    #         console.print(formatter(next(event.spaces)))
 
     # for i in range(5):
     #     print(f'==== Iteration {i} ====')

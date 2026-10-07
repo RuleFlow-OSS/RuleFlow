@@ -78,15 +78,15 @@ class BaseRule(RuleABC):
 
         # ======== Flags (that modify the internal rule behavior) ========
         # match() flags
-        self.space_range: tuple[int, int] = (0, 1)  # the range of spaces that are matched
-        self.match_range: tuple[int, int] = (0, 1)  # the range of matches if there are multiple matches
+        self.space_range: tuple[int, int] = (0, 0)  # the range of spaces that are matched
+        self.match_range: tuple[int, int] = (0, 0)  # the range of matches if there are multiple matches
         self.cmp: Literal["both", "og", "this", "ignore"] = "ignore"  # conflict marking protocol (if the second match conflicts with the first match, mark both as conflicts if mode='both', for instance, not only the second one.)
 
         # apply() flags
         self.no_causality_tracking: bool = False  # no cellular causality tracking (don't return delta vec)
         self.no_initial_branch: bool = False  # no initial branch the last space before executing rule (just modify last space) (can still be branched depending on `-pl` limit)
         self.no_delta_submit: bool = False  # if no new states are to be submitted (even if they do occur)
-        self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can be executed per call without breaking into another branch).
+        self.parallel_execution_limit: int = 1  # parallel execution limit (how many times the rule can modify a space before breaking into another branch).
         self.branch_limit: int = 0  # branch limit per run (how many branches can be created).
         self.branch_origin: Literal["prev", "current"] = "prev"  # does not apply to the first branch from previous event.
         self.crp: Literal["branch", "branch_nbl", "skip", "break", "ignore"] = "ignore"  # conflict resolution protocol. Note: at some point this could be extended to exclude BOTH conflicts, not just the one conflicting with the other.

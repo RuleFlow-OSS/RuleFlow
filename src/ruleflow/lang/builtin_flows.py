@@ -8,14 +8,14 @@ PRESETS: dict[str, str] = {
 """,  # default import code to streamline the use of CAs in the 0th group.
 
     '/lang/global_multiway.preset': """
--gb[false]
+-gb[False]
 -sr[0, inf]
 -mr[0, inf]
 -bl[inf]
 """,  # search buffer becomes "corrupt" after edits, so disable.
 
     '/lang/ordered_multiway.preset': """
--gb[true]
+-gb[True]
 -sr[0, inf]
 -mr[0, inf]
 -bl[inf]
