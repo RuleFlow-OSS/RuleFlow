@@ -1,6 +1,6 @@
 # RuleFlow
 
-To see more examples and documentation, visit our website.
+To see installation details, contribution guidelines, examples, and documentation, please [visit our website](https://www.ruleflow.org/).
 
 RuleFlow is a Python research framework designed to model, evolve, and perform rigorous causal analysis on discrete complex systems.
 It was originally developed as a tool for Sequential Substitution Systems for a small research team at Southern Adventist University. It has, of course, evolved and generalized way beyond Sequential Substitution Systems, and we plan to continue our efforts to generalize this projects upper layers (FlowLang and the Studio; the core is already quite general).
@@ -242,39 +242,3 @@ class P(Plugin):
             self.log.write(f"Total recorded space deltas: {total}")
 ```
 
----
-
-## Getting Started
-
-### Installation
-
-Clone the repository and install the project in editable mode with your preferred dependencies:
-
-```bash
-git clone https://github.com/your-org/ruleflow.git
-cd ruleflow
-pip install -e .
-```
-
-### Running RuleFlow Studio
-
-Launch the studio environment directly from your terminal:
-
-```bash
-python -m studio.view
-```
-
-### Running Tests
-
-RuleFlow includes an extensive test suite featuring hypothesis-driven fuzz testing of vector allocation mechanics, unit coverage of grammar and AST pipelines, and snapshot testing of verified physical evolutions:
-
-```bash
-# Run all verified and unit tests
-pytest
-
-# Run tests with coverage tracking
-pytest --cov=core --cov=lang
-```
-
-### Contributing
-More details coming soon!
