@@ -32,6 +32,17 @@ def test_space_state_overwrite(space_1d_factory):
     assert [c.quanta for c in delta.new_cells] == [99, 100]
 
 
+def test_space_state_insert(space_1d_factory):
+    space = space_1d_factory([1, 2, 3, 4])
+    next_space = space.next_gen()
+
+    delta = next_space.insert(2, (5, 6))
+
+    assert list(next_space.vec.data) == [1, 2, 5, 6, 3, 4]
+    assert [c.quanta for c in delta.new_cells] == [5, 6]
+    assert len(delta.destroyed_cells) == 0
+
+
 def test_space_state_delete(space_1d_factory):
     space = space_1d_factory([1, 2, 3, 4])
     next_space = space.next_gen()

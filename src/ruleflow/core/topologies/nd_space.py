@@ -63,7 +63,7 @@ class SpaceState1D(SpaceState):
         if selector < 0:
             selector = len(self.vec) + selector + 1
         self.vec[selector:selector] = new
-        return DeltaCell((), tuple(self.vec.get_cells(slice(selector, len(new)))))
+        return DeltaCell((), tuple(self.vec.get_cells(slice(selector, selector + len(new)))))
 
     def delete(self, selector: tuple[int, int]) -> DeltaCell:
         k: slice = slice(*selector)
