@@ -29,9 +29,9 @@ class LogView(RichLog):
     def on_print(self, e: events.Print):
         txt: str = e.text.rstrip('\n')
         if e.stderr:
-            self.write(f'[bold red]> stderr:[/bold red] [red]{txt}[/]')
+            self.write(f'[bold red]stderr[/]> [red]{txt}[/]')
         else:
-            if txt: self.write(txt)
+            if txt: self.write(f'[bold lightblue]stdout[/]> [lightblue]{txt}[/]')
 
 
 class P(Plugin):

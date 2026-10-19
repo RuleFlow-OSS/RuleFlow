@@ -47,8 +47,8 @@ class Model:
                     self.plugins.append(obj(self, view))
 
         # add builtin plugins
-        from ruleflow.studio.stdplgns import p_analysis, p_execute, p_explore
-        for module in (p_execute, p_explore, p_analysis):
+        from ruleflow.studio.stdplgns import p_analysis, p_execute, p_explore, p_render_engine
+        for module in (p_execute, p_explore, p_analysis, p_render_engine):
             grab_plugins(module)
 
         # load all plugins classes

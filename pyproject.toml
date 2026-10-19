@@ -3,24 +3,23 @@ name = "ruleflow"
 version = "1.0.10"
 description = "A Python research framework and terminal-based IDE (RuleFlow Studio) for modeling, evolving, and analyzing discrete complex systems like ECA and SSS."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.14"  # wait to upgrade to latest versions...
 dependencies = [
-    "matplotlib",
-    "networkx",
-    "numpy==2.5.3",
-    "numba==0.67.0",
-    "platformdirs==4.11.7",
+    "networkx==3.7",
+    "numpy==2.5.4",
+    "numba",
+    "platformdirs==4.13.4",
     "psutil",
     "pyvis",
     "pyyaml",
-    "regex==2026.9.3",
+    "regex==2026.9.29",
     "rich",
     "textual[syntax]",
-    "wcwidth==0.8.3",
+    "wcwidth==0.9.2",
     "wolframclient",
     "lark",
-    "pytest>=9.1.1",
-    "hypothesis>=6.167.1",
+    "sqids>=0.5.2",
+    "pydantic>=2.14.1",
 ]
 
 [project.urls]

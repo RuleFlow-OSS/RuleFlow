@@ -197,7 +197,7 @@ class DeltaSpace:  # returned by Rule.apply() in a Sequence[DeltaSpace]
 # TODO: maybe cache the properties?
 @dataclass(slots=True)
 class Event:
-    time: int  # also known as time - should be sequential and unique to every event
+    time: int  # should be sequential and unique to every event
     space_deltas: list[DeltaSpace]  # all space deltas (organized by the rules they were applied under)
 
     # metadata
