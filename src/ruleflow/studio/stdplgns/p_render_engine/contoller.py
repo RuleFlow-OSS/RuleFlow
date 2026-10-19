@@ -1,3 +1,11 @@
+"""
+Types of command messages:
+(Server <> Client) - ping/pong
+(Server -> Client) - regress(n)
+(Server -> Client) - evolve(n)
+(Server <- Client) - highlight_cells(n, ...)
+(Client -> Server) - highlight_nodes(n, ...)
+"""
 from ruleflow.studio.stdplgns.p_render_engine.client_side import (
     IpAddressSqidsEncoding, Config, Client, cast_none
 )

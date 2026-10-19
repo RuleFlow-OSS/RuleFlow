@@ -66,11 +66,11 @@ class P(Plugin):
         self.flow.on_regress_n.disconnect(self.handle_flow_regress)
 
     def on_command_message_received(self, msg: CommandMessage):
-        # TODO: we need to handle the different commands...
-        # match msg.Op:
-        #     case 'a type of op':
-        #         pass
-        pass
+        match msg.Op:
+            case 'evolve':
+                self.flow.evolve(int(msg.Args))
+            case 'regress':
+                self.flow.regress(int(msg.Args))
 
     def handle_flow_evolve(self, n: int):
         for e in self.flow.events[-n:]:
@@ -82,8 +82,7 @@ class P(Plugin):
             )
 
     def handle_flow_regress(self, n: int):
-        for _ in range(n):
-            self.ctrl.send_message(CommandMessage(Op='regress_step'))
+        self.ctrl.send_message(CommandMessage(Op='regress', Args=str(n)))
 
     def controls(self) -> Iterator[Widget]:
         self.connection_code = Input(
