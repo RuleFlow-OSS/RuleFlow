@@ -1,25 +1,29 @@
 [project]
 name = "ruleflow"
-version = "1.0.10"
+version = "1.1.4"
 description = "A Python research framework and terminal-based IDE (RuleFlow Studio) for modeling, evolving, and analyzing discrete complex systems like ECA and SSS."
 readme = "README.md"
-requires-python = ">=3.14"  # wait to upgrade to latest versions...
+requires-python = ">=3.12, <3.15"  # wait to upgrade to latest versions...
 dependencies = [
-    "networkx==3.7",
-    "numpy==2.5.4",
-    "numba",
-    "platformdirs==4.13.4",
+    "networkx",
+    "numpy",
+    "platformdirs",
     "psutil",
     "pyvis",
     "pyyaml",
-    "regex==2026.9.29",
+    "regex",
     "rich",
-    "textual[syntax]",
-    "wcwidth==0.9.2",
-    "wolframclient",
+    "textual",
+    "wcwidth",
     "lark",
-    "sqids>=0.5.2",
-    "pydantic>=2.14.1",
+    "sqids",
+    "pydantic",
+    "wolframclient"
+]
+
+[project.optional-dependencies]
+optional = [
+    "numba",
 ]
 
 [project.urls]
@@ -32,7 +36,7 @@ Issues = "https://github.com/RuleFlow-OSS/RuleFlow/issues"
 studio = "ruleflow.studio.view:run_studio_app"
 
 [build-system]
-requires = ["uv_build>=0.12.10,<0.13"]
+requires = ["uv_build>=0.13.4,<0.14"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

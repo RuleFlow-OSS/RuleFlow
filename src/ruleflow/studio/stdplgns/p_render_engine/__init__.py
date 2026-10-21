@@ -2,9 +2,8 @@
 This plugin provides basic executing/undoing features, hot-reload, and several other utilities for interactive flows.
 """
 # Textual Imports
-from textual.widgets import Collapsible, TabPane, Input, Button, Checkbox, RadioSet, RadioButton, Label, RichLog
+from textual.widgets import TabPane, Input, Button, Checkbox, Label, RichLog
 from textual.widget import Widget
-from textual import events
 from textual.containers import ScrollableContainer, HorizontalGroup
 
 # Standard Imports

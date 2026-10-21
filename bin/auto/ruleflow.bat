@@ -1,14 +1,16 @@
 @echo off
 setlocal enabledelayedexpansion
 
+set "PYTHON_VERSION=3.14"
+
+:: Always ensure the uv / tool bin folder is on PATH for this session
+set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+
 :: 1. Check if uv is installed, download if missing
 where uv >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo [INFO] uv not found. Downloading and installing uv...
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-    :: Add local bin to active PATH so the current session sees uv immediately
-    set "PATH=%USERPROFILE%\.local\bin;%PATH%"
 
     where uv >nul 2>nul
     if !ERRORLEVEL! neq 0 (
@@ -18,26 +20,21 @@ if %ERRORLEVEL% neq 0 (
     )
 )
 
-:: 2. Check if ruleflow tool environment exists; install or check for updates
-uv tool list | findstr /i /c:"ruleflow " >nul 2>nul
+:: 2. Install or update ruleflow (enforces Python version and overwrites stale shims)
+echo [INFO] Installing / checking for updates to ruleflow ^(Python %PYTHON_VERSION%^)...
+uv tool install --python %PYTHON_VERSION% --upgrade --force --refresh ruleflow
 if %ERRORLEVEL% neq 0 (
-    echo [INFO] ruleflow tool environment not found. Installing ruleflow...
-    uv tool install --refresh ruleflow
+    where studio >nul 2>nul
     if !ERRORLEVEL! neq 0 (
         echo [ERROR] Failed to install ruleflow.
         pause
         exit /b 1
     )
-) else (
-    echo [INFO] Checking for updates to ruleflow...
-    uv tool upgrade ruleflow
-    if !ERRORLEVEL! neq 0 (
-        echo [WARNING] Update check failed. Proceeding with existing version...
-    )
+    echo [WARNING] Update check failed ^(offline?^). Proceeding with existing version...
 )
 
-:: 3. Run RuleFlow Studio
+:: 3. Run RuleFlow Studio directly from the installed tool environment
 echo [INFO] Launching RuleFlow Studio...
-uv tool run --from ruleflow studio
+studio
 
 pause
