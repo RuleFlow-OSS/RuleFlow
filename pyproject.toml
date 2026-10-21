@@ -1,6 +1,6 @@
 [project]
 name = "ruleflow"
-version = "1.1.4"
+version = "1.1.5"
 description = "A Python research framework and terminal-based IDE (RuleFlow Studio) for modeling, evolving, and analyzing discrete complex systems like ECA and SSS."
 readme = "README.md"
 requires-python = ">=3.12, <3.15"  # wait to upgrade to latest versions...
@@ -13,7 +13,7 @@ dependencies = [
     "pyyaml",
     "regex",
     "rich",
-    "textual",
+    "textual[syntax]",
     "wcwidth",
     "lark",
     "sqids",

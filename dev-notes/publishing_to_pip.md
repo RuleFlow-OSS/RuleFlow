@@ -2,7 +2,7 @@
 
 ```bash
 uv build
-uv publish
+uv publish --token "<pypi-token>"
 ```
 
 The current directory layout being src/<package-name> is so that best practices are followed.
