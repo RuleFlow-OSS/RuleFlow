@@ -4,7 +4,6 @@ patterned after C#'s producer-consumer Channel conduit.
 """
 from ruleflow.studio.stdplgns.p_render_engine.message_protocol import Message
 from asyncio import Queue, QueueEmpty, QueueFull
-import asyncio
 from typing import AsyncIterator
 
 

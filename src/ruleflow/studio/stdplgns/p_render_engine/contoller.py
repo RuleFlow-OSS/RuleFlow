@@ -1,10 +1,9 @@
 """
 Types of command messages:
 (Server <> Client) - ping/pong
-(Server -> Client) - regress(n)
-(Server -> Client) - evolve(n)
-(Server <- Client) - highlight_cells(n, ...)
-(Client -> Server) - highlight_nodes(n, ...)
+(Server <- Client) - clear()
+(Server <- Client) - regress(n)
+TODO: implement a formal Enum class for command message types to clearly define what is allowed.
 """
 from ruleflow.studio.stdplgns.p_render_engine.client_side import (
     IpAddressSqidsEncoding, Config, Client, cast_none
@@ -23,7 +22,7 @@ class ClientController:
     This design enables us to scale up as we develop the protocol.
     """
 
-    loopback_sqid_code: str = IpAddressSqidsEncoding.encode(Config.loopback_address)
+    loopback_sqids_code: str = IpAddressSqidsEncoding.encode(Config.loopback_address)
 
     def __init__(self):
         self.client: Client = Client()
@@ -33,8 +32,8 @@ class ClientController:
         self.on_command_message_received: Signal[CommandMessage] = Signal()
         self.on_ping_pong_received: Signal[CommandMessage] = Signal()
 
-    def connect(self, sqid_code: str):
-        ip_address: str = IpAddressSqidsEncoding.decode(sqid_code)
+    def connect(self, sqids_code: str):
+        ip_address: str = IpAddressSqidsEncoding.decode(sqids_code)
         self.current_ip_address = ip_address
         self.client.connect(ip_address)
         self.client_task = asyncio.create_task(self._message_handler())
@@ -54,7 +53,7 @@ class ClientController:
                 continue  # only handle command messages
             match msg.Op:
                 case "ping":
-                    self.ping_server(op="pong")
+                    self.ping_server(op="pong", args="Client Replies Hi!")
                     self.on_ping_pong_received.emit(msg)
                 case "pong":
                     self.on_ping_pong_received.emit(msg)
@@ -77,7 +76,9 @@ if __name__ == '__main__':
         ctrl.on_ping_pong_received.connect(lambda m: print(f"Received: {m}"))
         ctrl.client.on_connected.connect(lambda: ctrl.ping_server())
 
-        ctrl.connect(ClientController.loopback_sqid_code)
+        ctrl.connect(ClientController.loopback_sqids_code)
+        await asyncio.sleep(2.0)  # Give it 2 seconds to connect, send, and receive
+        ctrl.send_message(EventMessage(Time=42, Connected=()))
         await asyncio.sleep(2.0)  # Give it 2 seconds to connect, send, and receive
         ctrl.disconnect()
         await asyncio.sleep(0.1)  # Let tasks finish cleanup

@@ -1,5 +1,3 @@
-from pydantic.v1 import JsonError
-
 from ruleflow.studio.stdplgns.p_render_engine.message_channels import (
     MessageChannels, ChannelReader, ChannelWriter
 )
@@ -137,7 +135,7 @@ class Client:
                 buffer: bytes = struct.pack(">i", len(message_bytes)) + message_bytes
                 stream_writer.write(buffer)
                 await stream_writer.drain()
-        except (Exception, asyncio.CancelledError) as e:
+        except (Exception, asyncio.CancelledError):
             pass  # asyncio.CancelledError equivalent to OperationCanceledException in C#
 
     async def _process_incoming_channel(self) -> None:
@@ -157,7 +155,7 @@ class Client:
                 except (json.JSONDecodeError, ValueError, KeyError, TypeError):
                     continue
         # All errors regarding the reading buffer must break the loop because we lose position.
-        except (asyncio.IncompleteReadError, asyncio.CancelledError, Exception) as e:
+        except (asyncio.IncompleteReadError, asyncio.CancelledError, Exception):
             # IncompleteReadError is equivalent to EndOfStreamException in C#
             # CancelledError is equivalent to OperationCanceledException in C#
             pass

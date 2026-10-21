@@ -29,8 +29,7 @@ class P(Plugin):
     def on_initialized(self) -> None:
         # ==== Client Side ====
         self.ctrl: ClientController = ClientController()
-        self.ctrl.on_command_message_received.connect(self.on_command_message_received)
-        self.ctrl.client.on_stopped.connect(self.on_connection_stopped)
+        self.ctrl.client.on_stopped.connect(self.on_client_stopped)
         self.ctrl.client.on_connected.connect(self.on_connected)
         self.ctrl.client.on_disconnected.connect(self.on_disconnected)
         self.ctrl.on_ping_pong_received.connect(
@@ -45,8 +44,8 @@ class P(Plugin):
             self.handle_btn_press
         )
 
-    def on_connection_stopped(self):
-        self.log_view.write("> [bold #FFA500]Connection Stopped[/]")
+    def on_client_stopped(self):
+        self.log_view.write("> [bold #FFA500]Client Stopped[/]")
         self.set_connected_ui_state(False)
 
     def on_connected(self):
@@ -54,40 +53,42 @@ class P(Plugin):
         self.set_connected_ui_state(True)
         self.flow.on_evolved_n.connect(self.handle_flow_evolve)
         self.flow.on_regress_n.connect(self.handle_flow_regress)
-        self.ctrl.send_message(
-            EventMessage(
-                Time=self.flow.current_event.time,
-                Connected=tuple[int](self.flow.current_event.causally_connected_events)
-            )
-        )
+        self.flow.on_clear.connect(self.handle_flow_clear)
+        # TODO: investigate why errors are not being propagated up (it just drops the connection if an error happens in
+        #  the connected callback... i.e. if we put an error here like ValueError, it drops the connection.)
 
     def on_disconnected(self):
+        self.log_view.write(f"> [bold #FFA500]Disconnected[/]")
         self.flow.on_evolved_n.disconnect(self.handle_flow_evolve)
         self.flow.on_regress_n.disconnect(self.handle_flow_regress)
-
-    def on_command_message_received(self, msg: CommandMessage):
-        match msg.Op:
-            case 'evolve':
-                self.flow.evolve(int(msg.Args))
-            case 'regress':
-                self.flow.regress(int(msg.Args))
+        self.flow.on_clear.disconnect(self.handle_flow_clear)
 
     def handle_flow_evolve(self, n: int):
+        if not self.event_streaming_enabled.value:
+            return
         for e in self.flow.events[-n:]:
             self.ctrl.send_message(
                 EventMessage(
-                    Time=e.time,
+                    Idx=e.time,
+                    DistanceToCreation=e.causal_distance_to_creation,
                     Connected=tuple[int](e.causally_connected_events)
                 )
             )
 
     def handle_flow_regress(self, n: int):
+        if not self.event_streaming_enabled.value:
+            return
         self.ctrl.send_message(CommandMessage(Op='regress', Args=str(n)))
+
+    def handle_flow_clear(self):
+        if not self.event_streaming_enabled.value:
+            return
+        self.ctrl.send_message(CommandMessage(Op='clear'))
 
     def controls(self) -> Iterator[Widget]:
         self.connection_code = Input(
-            value=self.ctrl.loopback_sqid_code,
-            placeholder=f'e.g. {self.ctrl.loopback_sqid_code}',
+            value=self.ctrl.loopback_sqids_code,
+            placeholder=f'e.g. {self.ctrl.loopback_sqids_code}',
             restrict=f'[{Config.sqids_config['alphabet']}]*'
         )
         self.connection_code.border_title = 'Connection Code'
@@ -102,6 +103,10 @@ class P(Plugin):
             self.test_connection_btn = Button('Ping', id='re-ping')
             self.test_connection_btn.disabled = True
             yield self.test_connection_btn
+
+        self.event_streaming_enabled = Checkbox("Event Streaming", value=True)
+        self.event_streaming_enabled.display = False
+        yield self.event_streaming_enabled
 
         yield Label()
 
@@ -123,6 +128,7 @@ class P(Plugin):
         if only_connection_elements:
             return
         self.test_connection_btn.disabled = not b
+        self.event_streaming_enabled.display = b
 
     def handle_btn_press(self, e: Button.Pressed):
         match e.button.id:

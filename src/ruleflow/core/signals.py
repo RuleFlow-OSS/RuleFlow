@@ -36,7 +36,7 @@ class Signal[*T]:
             self.callables.append((c, len(signature(c).parameters)))
 
     def disconnect(self, c: Callable[..., Any]) -> None:
-        matches: list[int] = [i for i, (c_, _) in enumerate(self.callables) if c_ is c]
+        matches: list[int] = [i for i, (c_, _) in enumerate(self.callables) if c_ == c]  # must be "==" rather than "is" so that bound methods work
         for i in reversed(matches):
             self.callables.pop(i)
 
@@ -49,4 +49,7 @@ if __name__ == "__main__":
     f2 = lambda a, b, c: print(a, b)
     t.connect(f1)
     t.connect(f2)
-    t.emit("yup", "")
+    t.emit("yup", "toast", "test")
+    t.disconnect(f1)
+    t.disconnect(f2)
+    t.emit("yup", "toast", "test")
