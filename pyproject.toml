@@ -18,7 +18,9 @@ dependencies = [
     "lark",
     "sqids",
     "pydantic",
-    "wolframclient"
+    "wolframclient",
+    "keystone-engine>=0.9.2",
+    "unicorn>=2.1.4",
 ]
 
 [project.optional-dependencies]

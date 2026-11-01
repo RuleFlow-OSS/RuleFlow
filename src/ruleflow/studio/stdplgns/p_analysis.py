@@ -12,6 +12,7 @@ from textual.widgets.selection_list import Selection
 from typing import Iterator
 from ruleflow.studio.model import Plugin
 from ruleflow.lang.interpreter import FlowLang
+from ruleflow.core.engine import Flow
 from ruleflow.analysis import EventCausalityGraph
 from ruleflow.core.numlib import str_to_num, INF
 from ruleflow.studio.config import USER_DATA_DIR_PATH
@@ -23,10 +24,10 @@ import math
 
 class P(Plugin):
     name = 'analysis'
-    file_types = ['.flow', '.pflow', '.wpflow']
+    file_types = ['.flow', '.pflow', '.wpflow', '.asm']
 
     @property
-    def flow(self) -> FlowLang:
+    def flow(self) -> FlowLang | Flow:
         return self.model.data.setdefault('flow', FlowLang())
 
     def on_initialized(self) -> None:

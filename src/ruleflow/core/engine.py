@@ -1,4 +1,4 @@
-"""core.engine
+"""asm.engine
 This implements the necessary abstraction layer and protocols as well as logic flow necessary to
 evolve systems that can be causally tracked.
 
@@ -46,8 +46,9 @@ class Topology(Protocol):
     All topology implementations must follow this protocol.
     It is also responsible for causality tracking via next_gen."""
 
-    as_cells: Iterator[Cell]
-    """Get (usually as a property) all cells contained in this topology."""
+    @property
+    def as_cells(self) -> Iterator[Cell]:
+        """Get all cells contained in this topology."""
 
     def get_cell(self, index: Any) -> Cell:
         """Get a specific cell within this topology."""
@@ -67,14 +68,6 @@ class SpaceState(ABC):
     - All modifier methods (that create/destroy vec) should return a DeltaSet containing the destroyed and created vec.
     - All SpaceStates that inherit from this class must implement the modifier methods. Additional topology specific methods must be accessible via self.topology.
     """
-
-    @abstractmethod
-    def __str__(self) -> str:
-        """String representation of SpaceState"""
-
-    @abstractmethod
-    def __repr__(self) -> str:
-        """Object representation of SpaceState"""
 
     @abstractmethod
     def next_gen(self) -> SpaceState:

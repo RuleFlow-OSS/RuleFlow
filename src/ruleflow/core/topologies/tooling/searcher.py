@@ -125,7 +125,7 @@ class VectorRegexSearch:
 # ================================ Literal Sub-Vector Search ================================
 @njit
 def _kmp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool) -> Iterator[int]:
-    """JIT-compiled core loop for the KMP algorithm."""
+    """JIT-compiled asm loop for the KMP algorithm."""
     p_len: int = len(pattern)
     b_len: int = len(search_buffer)
 
@@ -167,7 +167,7 @@ def _kmp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool)
 
 @njit
 def _rabin_karp_core(pattern: np.ndarray, search_buffer: np.ndarray, overlapping: bool) -> Iterator[int]:
-    """JIT-compiled core loop for the Rabin-Karp algorithm."""
+    """JIT-compiled asm loop for the Rabin-Karp algorithm."""
     p_len: int = len(pattern)
     b_len: int = len(search_buffer)
     base: int = 256

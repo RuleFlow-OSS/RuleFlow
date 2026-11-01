@@ -19,7 +19,7 @@ from ruleflow.studio.stdplgns.p_render_engine.message_protocol import *
 # noinspection DuplicatedCode
 class P(Plugin):
     name = 'RenderEngine'
-    file_types = ['.flow', '.pflow', '.wpflow']
+    file_types = ['.flow', '.pflow', '.wpflow', '.asm']
 
     @property
     def flow(self) -> FlowLang:

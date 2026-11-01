@@ -28,4 +28,4 @@ When developing custom plugins for RuleFlow Studio, adhering to a consistent str
 * **Isolate Business Logic:** Keep your UI event handlers clean by offloading the actual data processing (like graph generation or file exporting) into private, isolated methods prefixed with an underscore.
 * **Provide Contextual Notifications:** Use `self.view.notify()` to communicate successes or gracefully catch and display `Exception` errors to the user (using `severity="error"` or `"information"`).
 
-> **Developer Tip:** The best way to learn the architecture is by reading the source code! Whenever you are designing a new plugin, look directly at the standard built-in plugins (like `p_analysis.py`, `p_execute.py`, or `p_explore.py`) to get inspiration for styling, layout, and event handling.
+> **Developer Tip:** The best way to learn the architecture is by reading the source code! Whenever you are designing a new plugin, look directly at the standard built-in plugins (like `p_analysis.py`, `p_asm.py`, or `p_explore.py`) to get inspiration for styling, layout, and event handling.

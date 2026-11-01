@@ -1,6 +1,6 @@
 """
 ==== Policy ====
-All topology data structure implementations must implement the Cell protocol from core.engine. It is also the topology
+All topology data structure implementations must implement the Cell protocol from asm.engine. It is also the topology
 data structure's responsibility to track attributes. While Cell values can be changed elsewhere, the best practice for
 maximum cohesion is to have the topology take care of attribute updates. This means that attributes important to
 causality tracking are managed by the topology (such as a cell's ID, or it's gen/created_at attributes).

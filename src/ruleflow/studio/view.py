@@ -375,7 +375,7 @@ class EditorInstance(Widget):
         m.write_file(self.code_editor_text_area.text)
         self._is_dirty = False
         self.open_file_label.update(m.file_path.name)
-        # self.notify(f"Saved the \"{m.file_path.name}\" file.")
+        # self.notify(f"Saved the \"{asm.file_path.name}\" file.")
 
     def action_toggle_controls(self):
         menu = self.query_one("#plugin-controls")

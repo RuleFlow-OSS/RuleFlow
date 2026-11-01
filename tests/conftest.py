@@ -13,7 +13,7 @@ from ruleflow.core.engine import Event
 @pytest.fixture
 def space_1d_factory() -> Callable[[Sequence[int]], SpaceState1D]:
     """
-    Fixture to quickly generate 1D SpaceStates for isolated core testing.
+    Fixture to quickly generate 1D SpaceStates for isolated asm testing.
     Usage: space = space_1d_factory([65, 66, 67])
     """
 
@@ -64,7 +64,7 @@ def serialize_flow_events() -> Callable[[list[Event]], list[dict[str, Any]]]:
             }
             # Extract the raw vector data for comparison
             for space in event.spaces:
-                # Assuming 1D SpaceState for our current core implementations
+                # Assuming 1D SpaceState for our current asm implementations
                 if isinstance(space, SpaceState1D):
                     e_data["spaces"].append([int(val) for val in space.vec.data.logical_data])
 

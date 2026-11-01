@@ -58,7 +58,7 @@ if __name__ == "__main__":
         console.print(formatter(next(event.spaces)))
 
     # Causal Graph
-    # from core.graph import EventCausalityGraph
+    # from asm.graph import EventCausalityGraph
     # from pyvis.network import Network
     # g = EventCausalityGraph()
     # g.build(system, slice(0, 16))
