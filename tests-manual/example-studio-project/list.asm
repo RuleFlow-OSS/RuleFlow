@@ -1,6 +1,6 @@
 .data
-    array:      .word 12, 45, 7, 89, 23
-    length:     .word 5
+    array:  .word 45, 12, 89, 7, 23, 10
+    length: .word 6
     sum_result: .word 0
     max_result: .word 0
 
