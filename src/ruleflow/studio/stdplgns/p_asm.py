@@ -130,11 +130,6 @@ class P(Plugin):
             yield self.track_pc_cell
 
         with Collapsible(title="Program Log", collapsed=False):
-            self.log_build_summary = Checkbox(
-                "Show assemble summary", value=True, id="log-build-summary"
-            )
-            yield self.log_build_summary
-
             self.log_state_before = Checkbox(
                 "Show state before evolve", value=True, id="log-state-before"
             )
@@ -176,8 +171,16 @@ class P(Plugin):
         self.progress_bar = ProgressBar(
             total=100, show_eta=True, id="exec-progress-bar"
         )
+        self.summary_view = RichLog(
+            id="summary-view",
+            highlight=True,
+            markup=True,
+            wrap=False,
+            min_width=145,
+        )
         self.progress_container = Collapsible(
             self.progress_bar,
+            self.summary_view,
             title="Execution Progress",
             collapsed=False,
         )
@@ -295,10 +298,8 @@ class P(Plugin):
                 f"> [bold cyan]Assembled [u]{self.model.file_path.name}[/][/]"
             )
 
-            if self.log_build_summary.value:
-                self.log_view.write(
-                    prettier.print_bundle_summary(bundle)
-                )
+            self.summary_view.clear()
+            self.summary_view.write(prettier.print_bundle_summary(bundle))
         except Exception as exc:
             self._write_error("Assembly Error", exc, from_thread=False)
 
@@ -432,6 +433,7 @@ class P(Plugin):
                 self.flow.clear_evolution()
             self.bundle = None
             self.progress_bar.update(progress=0)
+            self.summary_view.clear()
             self._set_assembled_state(False)
             self.log_view.write(
                 "> [bold #FFA500]Cleared assembly & unlocked editor[/]"
